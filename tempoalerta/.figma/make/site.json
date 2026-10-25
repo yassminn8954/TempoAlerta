@@ -1,0 +1,10 @@
+{
+  "description": "Ajuda produtores rurais e organizadores de eventos a acompanhar previsões do tempo e receber alertas de chuva forte e geada para suas cidades.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
