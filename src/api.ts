@@ -1,5 +1,7 @@
-// Copie para tempoalerta/src/api.ts e crie tempoalerta/.env com: VITE_API_URL=http://localhost:3333/api
-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3333/api'
+const configuredBase = import.meta.env.VITE_API_URL
+  ?? (import.meta.env.PROD ? 'https://tempoalerta-api.onrender.com/api' : 'http://localhost:3333/api')
+const normalizedBase = configuredBase.replace(/\/+$/, '')
+const BASE = normalizedBase.endsWith('/api') ? normalizedBase : `${normalizedBase}/api`
 
 export type Tipo = 'previsao_diaria' | 'chuva_forte' | 'geada'
 export type Perfil = 'produtor_rural' | 'organizador_eventos'
