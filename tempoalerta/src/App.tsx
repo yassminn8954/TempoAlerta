@@ -1,30 +1,64 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   AlertTriangle, Bell, CalendarDays, Check, ChevronDown, ChevronLeft, CircleAlert,
-  CloudRain, Droplets, Eye, EyeOff, Frost, History, Home, LoaderCircle, LogOut,
-  Mail, MapPin, Menu, Moon, Plus, Search, Settings, ShieldCheck, Snowflake, Star,
+  Cloud, CloudLightning, CloudRain, Droplets, Eye, EyeOff, History, Home, LoaderCircle, LogOut,
+  Mail, MapPin, Menu, Moon, Plus, Search, Send, Settings, ShieldCheck, Snowflake, Star,
   Sun, Sunrise, Trash2, User, Users, Wind, X
 } from 'lucide-react'
+import {
+  api, ApiError, logado,
+  type Alerta, type Cidade, type CidadeBusca, type Perfil, type PrevisaoResp, type Tipo, type Usuario,
+} from './api'
 
-type Screen = 'auth' | 'onboarding' | 'dashboard' | 'cities' | 'preferences' | 'history' | 'detail' | 'messages' | 'states'
+type Screen = 'auth' | 'onboarding' | 'dashboard' | 'cities' | 'preferences' | 'history' | 'detail' | 'messages'
 
-const days = [
-  { d: 'Hoje', icon: Sun, max: 27, min: 17, rain: 10 },
-  { d: 'Ter', icon: CloudRain, max: 24, min: 16, rain: 70 },
-  { d: 'Qua', icon: CloudRain, max: 22, min: 15, rain: 85 },
-  { d: 'Qui', icon: Sun, max: 25, min: 14, rain: 20 },
-  { d: 'Sex', icon: Sun, max: 28, min: 16, rain: 5 },
-  { d: 'Sáb', icon: CloudRain, max: 26, min: 18, rain: 40 },
-  { d: 'Dom', icon: Sun, max: 29, min: 19, rain: 10 },
-]
+/* ---------- helpers ---------- */
+const TIPO_LABEL: Record<Tipo, string> = { previsao_diaria: 'Previsão diária', chuva_forte: 'Chuva forte', geada: 'Geada' }
+const PERFIL_LABEL: Record<Perfil, string> = { produtor_rural: 'Produtor rural', organizador_eventos: 'Organizador de eventos' }
+const r0 = (n: number) => Math.round(n)
+const primeiroNome = (n: string) => n.trim().split(/\s+/)[0]
+const iniciais = (n: string) => n.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('')
+const nomeCidade = (c: { nome: string; estado: string | null }) => (c.estado ? `${c.nome}, ${c.estado}` : c.nome)
 
-const alerts = [
-  { id: 1, date: 'Hoje, 06:00', city: 'Campinas, SP', type: 'Previsão diária', status: 'Enviado', msg: 'Bom dia, Carlos! Hoje teremos sol entre nuvens...' },
-  { id: 2, date: '12 jun, 18:42', city: 'Holambra, SP', type: 'Chuva forte', status: 'Enviado', msg: 'Atenção: chuva forte prevista nas próximas 2 horas...' },
-  { id: 3, date: '10 jun, 05:30', city: 'Campinas, SP', type: 'Geada', status: 'Enviado', msg: 'Alerta de geada: mínima prevista de 2°C para amanhã...' },
-  { id: 4, date: '09 jun, 06:00', city: 'Campinas, SP', type: 'Previsão diária', status: 'Falhou', msg: 'Bom dia! A previsão para hoje indica tempo firme...' },
-]
+function msgErro(e: unknown) {
+  if (e instanceof ApiError) return e.detalhes?.length ? `${e.message}: ${e.detalhes.map((d) => d.campo).join(', ')}` : e.message
+  return 'Não foi possível conectar ao servidor. Ele está rodando?'
+}
+function iconeClima(codigo: number): React.ElementType {
+  if (codigo <= 1) return Sun
+  if (codigo <= 3 || (codigo >= 45 && codigo <= 48)) return Cloud
+  if (codigo >= 95) return CloudLightning
+  if (codigo >= 71 && codigo <= 77) return Snowflake
+  return CloudRain
+}
+const ehHoje = (d: Date) => d.toDateString() === new Date().toDateString()
+function fmtEnvio(iso: string) {
+  const d = new Date(iso)
+  const hm = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  return ehHoje(d) ? `Hoje, ${hm}` : `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}, ${hm}`
+}
+const fmtHoraPrev = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)} às ${iso.slice(11, 13)}h`
+const horaCurta = (iso: string) => `${iso.slice(11, 13)}h`
+function atualizadoHa(iso: string) {
+  const min = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000))
+  return min < 1 ? 'agora' : `há ${min} min`
+}
+function saudacao() {
+  const h = new Date().getHours()
+  return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'
+}
 
+function useToast() {
+  const [t, setT] = useState<{ msg: string; err: boolean } | null>(null)
+  const show = (msg: string, err = false) => {
+    setT({ msg, err })
+    setTimeout(() => setT(null), 3500)
+  }
+  const node = t ? <div className={`toast ${t.err ? 'err' : ''}`}>{t.err ? <CircleAlert /> : <Check />} {t.msg}</div> : null
+  return [node, show] as const
+}
+
+/* ---------- componentes base ---------- */
 function Button({ children, variant = 'primary', className = '', ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary'|'secondary'|'ghost'|'danger' }) {
   return <button className={`btn btn-${variant} ${className}`} {...props}>{children}</button>
 }
@@ -37,10 +71,68 @@ function Toggle({ checked, onChange }: { checked: boolean, onChange: () => void 
 function Logo() {
   return <div className="logo"><span className="logo-mark"><CloudRain size={24}/><Sun size={14}/></span><strong>Tempo<span>Alerta</span></strong></div>
 }
+function PageHead({ eyebrow, title, desc, action }: {eyebrow:string,title:string,desc:string,action?:React.ReactNode}) {
+  return <div className="page-head"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{desc}</p></div>{action}</div>
+}
+function Carregando({ texto }: { texto: string }) {
+  return <div className="state-grid" style={{ gridTemplateColumns: '1fr' }}><article><LoaderCircle className="spin"/><h2>{texto}</h2></article></div>
+}
+function Erro({ texto, onRetry }: { texto: string; onRetry?: () => void }) {
+  return <div className="state-grid" style={{ gridTemplateColumns: '1fr' }}><article className="error"><CircleAlert/><h2>Algo deu errado</h2><p>{texto}</p>{onRetry && <Button variant="secondary" onClick={onRetry}>Tentar novamente</Button>}</article></div>
+}
+function SemCidade({ go }: { go: (s: Screen) => void }) {
+  return <div className="state-grid" style={{ gridTemplateColumns: '1fr' }}><article><MapPin/><h2>Nenhuma cidade ainda</h2><p>Adicione uma cidade para começar a receber previsões.</p><Button onClick={() => go('cities')}><Plus/> Adicionar cidade</Button></article></div>
+}
 
-function Auth({ go }: { go: (s: Screen) => void }) {
+/* busca de cidades (Open-Meteo Geocoding, via back) */
+function CitySearch({ value, onChange }: { value: CidadeBusca | null; onChange: (c: CidadeBusca) => void }) {
+  const [q, setQ] = useState('')
+  const [res, setRes] = useState<CidadeBusca[]>([])
+  const [loading, setLoading] = useState(false)
+  const [erro, setErro] = useState('')
+
+  useEffect(() => {
+    if (q.trim().length < 2) { setRes([]); return }
+    let vivo = true
+    setLoading(true); setErro('')
+    const t = setTimeout(() => {
+      api.buscarCidades(q.trim())
+        .then((r) => vivo && setRes(r))
+        .catch((e) => vivo && setErro(msgErro(e)))
+        .finally(() => vivo && setLoading(false))
+    }, 350)
+    return () => { vivo = false; clearTimeout(t) }
+  }, [q])
+
+  return <>
+    <Field label="Busque uma cidade" icon={loading ? LoaderCircle : Search} placeholder="Digite o nome da cidade" value={q} onChange={(e) => setQ(e.target.value)}/>
+    {erro && <p className="form-error">{erro}</p>}
+    {!loading && !erro && q.trim().length >= 2 && res.length === 0 && <p className="api-note"><CircleAlert/> Cidade não encontrada. Confira a ortografia ou tente uma cidade próxima.</p>}
+    {res.map((c) => {
+      const sel = !!value && value.latitude === c.latitude && value.longitude === c.longitude
+      return <button key={`${c.latitude},${c.longitude}`} className={`city-result ${sel ? 'sel' : ''}`} onClick={() => onChange(c)}>
+        <MapPin/><span><strong>{c.nome}</strong><small>{c.estado ?? '—'}, {c.pais} • {c.latitude.toFixed(2)}, {c.longitude.toFixed(2)}</small></span>{sel && <Check/>}
+      </button>
+    })}
+  </>
+}
+
+/* ---------- telas ---------- */
+function Auth({ onAuth }: { onAuth: (u: Usuario, novo: boolean) => void }) {
   const [signup, setSignup] = useState(false)
   const [show, setShow] = useState(false)
+  const [nome, setNome] = useState(''), [email, setEmail] = useState(''), [senha, setSenha] = useState('')
+  const [erro, setErro] = useState(''), [loading, setLoading] = useState(false)
+
+  async function enviar() {
+    setErro(''); setLoading(true)
+    try {
+      const u = signup ? await api.cadastro(nome, email, senha, 'produtor_rural') : await api.login(email, senha)
+      onAuth(u, signup)
+    } catch (e) { setErro(msgErro(e)) } finally { setLoading(false) }
+  }
+  const enter = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !loading) enviar() }
+
   return <main className="auth-page">
     <section className="auth-brand">
       <Logo/>
@@ -48,170 +140,558 @@ function Auth({ go }: { go: (s: Screen) => void }) {
         <span className="eyebrow light">PREVISÃO QUE CHEGA ATÉ VOCÊ</span>
         <h1>Prepare-se antes<br/>do tempo mudar.</h1>
         <p>Alertas simples e confiáveis para proteger sua produção e seus eventos.</p>
-        <div className="brand-points"><span><ShieldCheck/> Alertas antecipados</span><span><Mail/> Direto no seu e-mail</span></div>
+        <div className="brand-points"><span><ShieldCheck/> Alertas antecipados</span><span><Send/> Nos canais conectados</span></div>
       </div>
-      <div className="weather-art"><CloudRain/><span>18°</span><small>Chuva forte em 2h</small></div>
     </section>
     <section className="auth-form">
       <div className="mobile-logo"><Logo/></div>
-      <div className="form-box">
+      <div className="form-box" onKeyDown={enter}>
         <span className="eyebrow">{signup ? 'CRIE SUA CONTA' : 'BEM-VINDO DE VOLTA'}</span>
         <h2>{signup ? 'Comece a se prevenir' : 'Acesse sua conta'}</h2>
         <p>{signup ? 'Leva menos de dois minutos.' : 'Seus alertas continuam cuidando do que importa.'}</p>
-        {signup && <Field label="Nome completo" icon={User} placeholder="Como podemos chamar você?"/>}
-        <Field label="E-mail" icon={Mail} type="email" placeholder="voce@exemplo.com"/>
-        <Field label="Senha" icon={show ? EyeOff : Eye} type={show ? 'text' : 'password'} placeholder="Mínimo de 8 caracteres" onFocus={()=>{}}/>
+        {signup && <Field label="Nome completo" icon={User} placeholder="Como podemos chamar você?" value={nome} onChange={(e) => setNome(e.target.value)}/>}
+        <Field label="E-mail" icon={Mail} type="email" placeholder="voce@exemplo.com" value={email} onChange={(e) => setEmail(e.target.value)}/>
+        <Field label="Senha" icon={show ? EyeOff : Eye} type={show ? 'text' : 'password'} placeholder="Mínimo de 8 caracteres" value={senha} onChange={(e) => setSenha(e.target.value)}/>
         <div className="form-meta">
           <label><input type="checkbox"/> Lembrar de mim</label>
-          {!signup && <button>Esqueci minha senha</button>}
-          <button className="show-password" onClick={()=>setShow(!show)}>{show ? 'Ocultar' : 'Mostrar'} senha</button>
+          <button className="show-password" onClick={() => setShow(!show)}>{show ? 'Ocultar' : 'Mostrar'} senha</button>
         </div>
-        <Button className="full" onClick={()=> signup ? go('onboarding') : go('dashboard')}>{signup ? 'Criar minha conta' : 'Entrar'} <ChevronDown className="arrow-right" size={18}/></Button>
-        <p className="switch">{signup ? 'Já possui uma conta?' : 'Ainda não tem uma conta?'} <button onClick={()=>setSignup(!signup)}>{signup ? 'Entrar' : 'Cadastre-se grátis'}</button></p>
+        {erro && <p className="form-error">{erro}</p>}
+        <Button className="full" disabled={loading} onClick={enviar}>{loading ? 'Aguarde...' : signup ? 'Criar minha conta' : 'Entrar'} <ChevronDown className="arrow-right" size={18}/></Button>
+        <p className="switch">{signup ? 'Já possui uma conta?' : 'Ainda não tem uma conta?'} <button onClick={() => { setSignup(!signup); setErro('') }}>{signup ? 'Entrar' : 'Cadastre-se grátis'}</button></p>
       </div>
     </section>
   </main>
 }
 
-function Onboarding({ go }: { go: (s: Screen) => void }) {
+function Onboarding({ user, onDone }: { user: Usuario; onDone: (cidadeId: number) => void }) {
   const [step, setStep] = useState(1)
-  const [profile, setProfile] = useState('rural')
+  const [perfil, setPerfil] = useState<Perfil>(user.perfil)
+  const [cidade, setCidade] = useState<CidadeBusca | null>(null)
+  const [horario, setHorario] = useState('06:00')
+  const [erro, setErro] = useState(''), [loading, setLoading] = useState(false)
+
+  async function avancar() {
+    setErro('')
+    try {
+      if (step === 1) {
+        setLoading(true)
+        if (perfil !== user.perfil) await api.atualizarPerfil(perfil)
+        setStep(2)
+      } else if (step === 2) {
+        setStep(3)
+      } else if (cidade) {
+        setLoading(true)
+        const c = await api.addCidade({ nome: cidade.nome, estado: cidade.uf ?? cidade.estado, latitude: cidade.latitude, longitude: cidade.longitude, horario_envio: horario })
+        onDone(c.id)
+      }
+    } catch (e) { setErro(msgErro(e)) } finally { setLoading(false) }
+  }
+
   return <main className="onboarding">
     <header><Logo/><span>Passo {step} de 3</span></header>
-    <div className="progress"><i style={{width:`${step*33.33}%`}}/></div>
+    <div className="progress"><i style={{ width: `${step * 33.33}%` }}/></div>
     <section className="onboard-card">
       {step === 1 && <>
         <span className="step-icon"><Users/></span><h1>Como você usa a previsão?</h1><p>Vamos personalizar seus alertas para o que realmente importa.</p>
         <div className="profile-grid">
-          <button className={profile==='rural'?'selected':''} onClick={()=>setProfile('rural')}><span>🌱</span><strong>Produtor Rural</strong><small>Geada, chuva forte e apoio à produção</small>{profile==='rural'&&<Check/>}</button>
-          <button className={profile==='event'?'selected':''} onClick={()=>setProfile('event')}><span>⛺</span><strong>Organizador de Eventos</strong><small>Chuva, vento e planejamento</small>{profile==='event'&&<Check/>}</button>
+          <button className={perfil === 'produtor_rural' ? 'selected' : ''} onClick={() => setPerfil('produtor_rural')}><span>🌱</span><strong>Produtor Rural</strong><small>Geada, chuva forte e apoio à produção</small>{perfil === 'produtor_rural' && <Check/>}</button>
+          <button className={perfil === 'organizador_eventos' ? 'selected' : ''} onClick={() => setPerfil('organizador_eventos')}><span>⛺</span><strong>Organizador de Eventos</strong><small>Chuva, vento e planejamento</small>{perfil === 'organizador_eventos' && <Check/>}</button>
         </div>
       </>}
       {step === 2 && <>
         <span className="step-icon"><MapPin/></span><h1>Qual cidade quer acompanhar?</h1><p>Você poderá adicionar outras cidades depois.</p>
-        <Field label="Busque uma cidade" icon={Search} placeholder="Digite o nome da cidade"/>
-        <button className="city-result"><MapPin/><span><strong>Campinas</strong><small>São Paulo, Brasil • -22.90, -47.06</small></span><Check/></button>
-        <p className="api-note"><CircleAlert/> Busca de cidades com geocodificação e coordenadas.</p>
+        <CitySearch value={cidade} onChange={setCidade}/>
       </>}
       {step === 3 && <>
         <span className="step-icon"><Sunrise/></span><h1>Que horas devemos avisar?</h1><p>Enviaremos a previsão diária no horário que funciona para você.</p>
-        <label className="time-choice"><span>Horário de envio</span><input type="time" defaultValue="06:00"/></label>
-        <div className="summary"><Mail/><span><strong>Resumo diário às 06:00</strong><small>para Campinas, SP • via e-mail</small></span></div>
+        <label className="time-choice"><span>Horário de envio</span><input type="time" value={horario} onChange={(e) => setHorario(e.target.value)}/></label>
+        <div className="summary"><Sunrise/><span><strong>Previsão diária às {horario}</strong><small>para {cidade ? nomeCidade({ nome: cidade.nome, estado: cidade.uf ?? cidade.estado }) : ''} • canais configurados nas preferências</small></span></div>
       </>}
-      <div className="onboard-actions">{step>1 && <Button variant="ghost" onClick={()=>setStep(step-1)}><ChevronLeft/> Voltar</Button>}<Button onClick={()=> step<3 ? setStep(step+1) : go('dashboard')}>{step===3?'Ver meu painel':'Continuar'} <span>→</span></Button></div>
+      {erro && <p className="form-error">{erro}</p>}
+      <div className="onboard-actions">
+        {step > 1 && <Button variant="ghost" onClick={() => setStep(step - 1)}><ChevronLeft/> Voltar</Button>}
+        <Button disabled={loading || (step === 2 && !cidade) || (step === 3 && !horario)} onClick={avancar}>{step === 3 ? 'Ver meu painel' : 'Continuar'} <span>→</span></Button>
+      </div>
     </section>
   </main>
 }
 
-function Shell({ screen, go, theme, setTheme, children }: { screen: Screen, go:(s:Screen)=>void, theme:string, setTheme:(v:string)=>void, children:React.ReactNode }) {
+function Shell({ screen, go, theme, setTheme, user, cidades, cidadeId, setCidadeId, sair, children }: {
+  screen: Screen; go: (s: Screen) => void; theme: string; setTheme: (v: string) => void
+  user: Usuario; cidades: Cidade[]; cidadeId: number | null; setCidadeId: (id: number) => void; sair: () => void; children: React.ReactNode
+}) {
   const nav = [
     ['dashboard','Visão geral',Home], ['cities','Minhas cidades',MapPin], ['preferences','Preferências',Settings],
-    ['history','Histórico',History], ['messages','Mensagens',Mail], ['states','Estados da UI',CircleAlert]
+    ['history','Histórico',History], ['messages','Testar envio',Send]
   ] as const
   return <div className="app-shell">
     <aside>
       <Logo/>
-      <nav>{nav.map(([id,label,Icon])=><button key={id} className={screen===id?'active':''} onClick={()=>go(id)}><Icon/>{label}</button>)}</nav>
-      <div className="aside-bottom"><button onClick={()=>setTheme(theme==='dark'?'light':'dark')}>{theme==='dark'?<Sun/>:<Moon/>}{theme==='dark'?'Tema claro':'Tema escuro'}</button><button onClick={()=>go('auth')}><LogOut/>Sair</button><div className="profile"><span>CR</span><div><strong>Carlos Ribeiro</strong><small>Produtor rural</small></div></div></div>
+      <nav>{nav.map(([id,label,Icon]) => <button key={id} className={screen===id?'active':''} onClick={() => go(id)}><Icon/>{label}</button>)}</nav>
+      <div className="aside-bottom">
+        <button onClick={() => setTheme(theme==='dark'?'light':'dark')}>{theme==='dark'?<Sun/>:<Moon/>}{theme==='dark'?'Tema claro':'Tema escuro'}</button>
+        <button onClick={sair}><LogOut/>Sair</button>
+        <div className="profile"><span>{iniciais(user.nome)}</span><div><strong>{user.nome}</strong><small>{PERFIL_LABEL[user.perfil]}</small></div></div>
+      </div>
     </aside>
     <section className="main-area">
-      <header className="topbar"><button className="menu"><Menu/></button><div className="top-city"><MapPin/><span><small>Cidade principal</small><strong>Campinas, SP</strong></span><ChevronDown/></div><div className="top-actions"><button onClick={()=>setTheme(theme==='dark'?'light':'dark')}>{theme==='dark'?<Sun/>:<Moon/>}</button><button className="bell"><Bell/><i>2</i></button><span className="avatar">CR</span></div></header>
+      <header className="topbar">
+        <button className="menu"><Menu/></button>
+        <div className="top-city"><MapPin/><span><small>Cidade</small>
+          {cidades.length ? <select value={cidadeId ?? ''} onChange={(e) => setCidadeId(Number(e.target.value))}>{cidades.map((c) => <option key={c.id} value={c.id}>{nomeCidade(c)}</option>)}</select> : <strong>Nenhuma cidade</strong>}
+        </span><ChevronDown/></div>
+        <div className="top-actions">
+          <button onClick={() => setTheme(theme==='dark'?'light':'dark')}>{theme==='dark'?<Sun/>:<Moon/>}</button>
+          <button className="bell" onClick={() => go('history')}><Bell/></button>
+          <span className="avatar">{iniciais(user.nome)}</span>
+        </div>
+      </header>
       {children}
     </section>
-    <nav className="bottom-nav">{nav.slice(0,5).map(([id,label,Icon])=><button key={id} className={screen===id?'active':''} onClick={()=>go(id)}><Icon/><span>{label.split(' ')[0]}</span></button>)}</nav>
+    <nav className="bottom-nav">{nav.slice(0,5).map(([id,label,Icon]) => <button key={id} className={screen===id?'active':''} onClick={() => go(id)}><Icon/><span>{label.split(' ')[0]}</span></button>)}</nav>
   </div>
 }
 
-function PageHead({ eyebrow, title, desc, action }: {eyebrow:string,title:string,desc:string,action?:React.ReactNode}) {
-  return <div className="page-head"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{desc}</p></div>{action}</div>
-}
+function Dashboard({ user, cidade, go }: { user: Usuario; cidade: Cidade | null; go: (s: Screen) => void }) {
+  const [prev, setPrev] = useState<PrevisaoResp | null>(null)
+  const [erro, setErro] = useState('')
+  const [fechados, setFechados] = useState<string[]>([])
+  const [tick, setTick] = useState(0)
 
-function Dashboard({ go }: {go:(s:Screen)=>void}) {
+  useEffect(() => {
+    if (!cidade) return
+    let vivo = true
+    setPrev(null); setErro('')
+    api.previsao(cidade.id).then((p) => vivo && setPrev(p)).catch((e) => vivo && setErro(msgErro(e)))
+    return () => { vivo = false }
+  }, [cidade?.id, tick])
+
+  const hoje = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()
+  const head = <PageHead eyebrow={hoje} title={`${saudacao()}, ${primeiroNome(user.nome)}!`} desc="Aqui está o que o tempo reserva para você hoje."/>
+
+  if (!cidade) return <main className="content">{head}<SemCidade go={go}/></main>
+  if (erro) return <main className="content">{head}<Erro texto={erro} onRetry={() => setTick((t) => t + 1)}/></main>
+  if (!prev) return <main className="content">{head}<Carregando texto="Atualizando previsão"/></main>
+
+  const Icone = iconeClima(prev.atual.codigo)
+  const menor = prev.status_geral.menor_minima
   return <main className="content">
-    <PageHead eyebrow="SEGUNDA-FEIRA, 16 DE JUNHO" title="Bom dia, Carlos!" desc="Aqui está o que o tempo reserva para você hoje."/>
-    <div className="alert-banner"><span><AlertTriangle/></span><div><strong>Chuva forte prevista para hoje</strong><p>Entre 16h e 19h • Acumulado de até 32 mm</p></div><Button variant="secondary" onClick={()=>go('detail')}>Ver detalhes</Button><button className="close"><X/></button></div>
+    {head}
+    {prev.alertas_ativos.filter((a) => !fechados.includes(a.tipo)).map((a) => <div className="alert-banner" key={a.tipo}>
+      <span>{a.tipo === 'geada' ? <Snowflake/> : <AlertTriangle/>}</span>
+      <div>
+        <strong>{a.tipo === 'geada' ? 'Risco de geada nas próximas 24h' : 'Chuva forte prevista nas próximas 24h'}</strong>
+        <p>{a.tipo === 'geada' ? `Mínima de ${r0(a.minima)}°C por volta de ${horaCurta(a.hora_minima)}` : `Pico de ${a.pico_mm} mm/h por volta de ${horaCurta(a.hora_pico)} • Acumulado de ${a.total_24h_mm} mm`}</p>
+      </div>
+      <Button variant="secondary" onClick={() => go('history')}>Ver histórico</Button>
+      <button className="close" onClick={() => setFechados([...fechados, a.tipo])}><X/></button>
+    </div>)}
     <section className="dashboard-grid">
       <div className="current-weather">
-        <div className="weather-top"><div><span className="location"><MapPin/> Campinas, SP</span><h2>24<span>°C</span></h2><strong>Parcialmente nublado</strong><p>Sensação térmica de 25°C</p></div><div className="big-weather"><Sun/><CloudRain/></div></div>
-        <div className="metrics"><div><CloudRain/><span><small>CHUVA</small><strong>70%</strong></span></div><div><Wind/><span><small>VENTO</small><strong>14 km/h</strong></span></div><div><Droplets/><span><small>UMIDADE</small><strong>78%</strong></span></div><div><Sunrise/><span><small>MÍN. / MÁX.</small><strong>17° / 27°</strong></span></div></div>
-        <small className="source">Dados atualizados há 8 min • Open-Meteo</small>
+        <div className="weather-top">
+          <div><span className="location"><MapPin/> {nomeCidade(cidade)}</span><h2>{r0(prev.atual.temperatura)}<span>°C</span></h2><strong>{prev.atual.descricao}</strong><p>Sensação térmica de {r0(prev.atual.sensacao)}°C</p></div>
+          <div className="big-weather"><Icone/></div>
+        </div>
+        <div className="metrics">
+          <div><CloudRain/><span><small>CHUVA</small><strong>{r0(prev.hoje.prob_chuva)}%</strong></span></div>
+          <div><Wind/><span><small>VENTO</small><strong>{r0(prev.atual.vento_kmh)} km/h</strong></span></div>
+          <div><Droplets/><span><small>UMIDADE</small><strong>{r0(prev.atual.umidade)}%</strong></span></div>
+          <div><Sunrise/><span><small>MÍN. / MÁX.</small><strong>{r0(prev.hoje.min)}° / {r0(prev.hoje.max)}°</strong></span></div>
+        </div>
+        <small className="source">Dados atualizados {atualizadoHa(prev.atualizado_em)} • {prev.fonte}</small>
       </div>
-      <div className="side-card"><div className="side-icon good"><ShieldCheck/></div><span className="eyebrow">STATUS GERAL</span><h3>Condições favoráveis</h3><p>Sem risco de geada nas próximas 48 horas.</p><div className="mini-status"><Snowflake/><span><small>Menor temperatura</small><strong>14°C na quinta-feira</strong></span></div></div>
+      <div className="side-card">
+        <div className={`side-icon ${prev.status_geral.risco_geada_48h ? '' : 'good'}`}>{prev.status_geral.risco_geada_48h ? <Snowflake/> : <ShieldCheck/>}</div>
+        <span className="eyebrow">STATUS GERAL</span>
+        <h3>{prev.status_geral.risco_geada_48h ? 'Atenção ao frio' : 'Condições favoráveis'}</h3>
+        <p>{prev.status_geral.risco_geada_48h ? 'Há risco de geada nas próximas 48 horas.' : 'Sem risco de geada nas próximas 48 horas.'}</p>
+        <div className="mini-status"><Snowflake/><span><small>Menor temperatura da semana</small><strong>{r0(menor.valor)}°C ({menor.data === prev.dias[0].data ? 'hoje' : menor.dia_semana})</strong></span></div>
+      </div>
     </section>
-    <section className="forecast card"><div className="section-title"><div><span className="eyebrow">PRÓXIMOS DIAS</span><h2>Previsão de 7 dias</h2></div><span className="updated">Atualizado agora</span></div><div className="forecast-row">{days.map(({d,icon:Icon,max,min,rain})=><div className={d==='Hoje'?'today':''} key={d}><strong>{d}</strong><Icon/><span><b>{max}°</b> {min}°</span><small><Droplets/> {rain}%</small></div>)}</div></section>
+    <section className="forecast card">
+      <div className="section-title"><div><span className="eyebrow">PRÓXIMOS DIAS</span><h2>Previsão de 7 dias</h2></div><span className="updated">Atualizado {atualizadoHa(prev.atualizado_em)}</span></div>
+      <div className="forecast-row">{prev.dias.map((d, i) => { const I = iconeClima(d.codigo); return <div className={i === 0 ? 'today' : ''} key={d.data}><strong>{d.dia_semana}</strong><I/><span><b>{r0(d.max)}°</b> {r0(d.min)}°</span><small><Droplets/> {r0(d.prob_chuva)}%</small></div> })}</div>
+    </section>
   </main>
 }
 
-function Cities() {
-  const [modal,setModal]=useState(false)
-  const [toast,setToast]=useState(false)
+function CityWeather({ id }: { id: number }) {
+  const [p, setP] = useState<PrevisaoResp | null | 'erro'>(null)
+  useEffect(() => { let v = true; api.previsao(id).then((r) => v && setP(r)).catch(() => v && setP('erro')); return () => { v = false } }, [id])
+  const I = p && p !== 'erro' ? iconeClima(p.atual.codigo) : Sun
+  return <div className="city-weather"><I/>{p && p !== 'erro' ? `${r0(p.atual.temperatura)}°` : '--'}</div>
+}
+
+function Cities({ cidades, recarregar, setCidadeId }: { cidades: Cidade[]; recarregar: (preferId?: number) => Promise<unknown>; setCidadeId: (id: number) => void }) {
+  const [remover, setRemover] = useState<Cidade | null>(null)
+  const [adicionando, setAdicionando] = useState(false)
+  const [escolhida, setEscolhida] = useState<CidadeBusca | null>(null)
+  const [erro, setErro] = useState(''), [loading, setLoading] = useState(false)
+  const [toast, show] = useToast()
+
+  async function adicionar() {
+    if (!escolhida) return
+    setErro(''); setLoading(true)
+    try {
+      const c = await api.addCidade({ nome: escolhida.nome, estado: escolhida.uf ?? escolhida.estado, latitude: escolhida.latitude, longitude: escolhida.longitude })
+      await recarregar()
+      setAdicionando(false); setEscolhida(null)
+      show(`${c.nome} adicionada.`)
+    } catch (e) { setErro(msgErro(e)) } finally { setLoading(false) }
+  }
+  async function principal(c: Cidade) {
+    try { await api.definirPrincipal(c.id); await recarregar(c.id); setCidadeId(c.id); show(`${c.nome} agora é a cidade principal.`) } catch (e) { show(msgErro(e), true) }
+  }
+  async function confirmarRemocao() {
+    if (!remover) return
+    try { await api.removerCidade(remover.id); await recarregar(); show(`${remover.nome} removida.`) } catch (e) { show(msgErro(e), true) }
+    setRemover(null)
+  }
+
   return <main className="content">
-    <PageHead eyebrow="LOCALIZAÇÕES" title="Minhas cidades" desc="Gerencie os locais que você acompanha." action={<Button onClick={()=>setToast(true)}><Plus/> Adicionar cidade</Button>}/>
+    <PageHead eyebrow="LOCALIZAÇÕES" title="Minhas cidades" desc="Gerencie os locais que você acompanha." action={<Button onClick={() => setAdicionando(true)}><Plus/> Adicionar cidade</Button>}/>
     <div className="city-list">
-      {[['Campinas','São Paulo','-22.90, -47.06',true],['Holambra','São Paulo','-22.63, -47.05',false]].map((c)=><article className="city-card" key={c[0] as string}><div className="city-weather"><Sun/>24°</div><div><span className="eyebrow">{c[3]?'CIDADE PRINCIPAL':'CIDADE MONITORADA'}</span><h2>{c[0]}, {c[1]}</h2><p><MapPin/> {c[2]} • Geocodificação ativa</p></div><div className="city-actions">{!c[3]&&<Button variant="secondary"><Star/> Definir principal</Button>}<button className="icon danger" onClick={()=>setModal(true)}><Trash2/></button></div></article>)}
+      {cidades.length === 0 && <div className="state-grid" style={{ gridTemplateColumns: '1fr' }}><article><MapPin/><h2>Nenhuma cidade ainda</h2><p>Adicione uma cidade para começar a receber previsões.</p></article></div>}
+      {cidades.map((c) => <article className="city-card" key={c.id}>
+        <CityWeather id={c.id}/>
+        <div><span className="eyebrow">{c.principal ? 'CIDADE PRINCIPAL' : 'CIDADE MONITORADA'}</span><h2>{nomeCidade(c)}</h2><p><MapPin/> {c.latitude.toFixed(2)}, {c.longitude.toFixed(2)} • Resumo diário às {c.preferencia.horario_envio}</p></div>
+        <div className="city-actions">
+          {!c.principal && <Button variant="secondary" onClick={() => principal(c)}><Star/> Definir principal</Button>}
+          <button className="icon danger" aria-label={`Remover ${c.nome}`} onClick={() => setRemover(c)}><Trash2/></button>
+        </div>
+      </article>)}
     </div>
-    {modal&&<div className="modal-backdrop"><div className="modal"><span className="modal-icon"><Trash2/></span><h2>Remover Holambra?</h2><p>Você deixará de receber previsões e alertas desta cidade.</p><div><Button variant="ghost" onClick={()=>setModal(false)}>Cancelar</Button><Button variant="danger" onClick={()=>setModal(false)}>Sim, remover</Button></div></div></div>}
-    {toast&&<div className="toast"><Check/> Busca de cidade aberta com sucesso.<button onClick={()=>setToast(false)}><X/></button></div>}
+    {adicionando && <div className="modal-backdrop"><div className="modal" style={{ textAlign: 'left', width: 'min(520px,100%)' }}>
+      <h2>Adicionar cidade</h2>
+      <CitySearch value={escolhida} onChange={setEscolhida}/>
+      {erro && <p className="form-error">{erro}</p>}
+      <div style={{ marginTop: 18, justifyContent: 'flex-end' }}>
+        <Button variant="ghost" onClick={() => { setAdicionando(false); setEscolhida(null); setErro('') }}>Cancelar</Button>
+        <Button disabled={!escolhida || loading} onClick={adicionar}>{loading ? 'Adicionando...' : 'Adicionar'}</Button>
+      </div>
+    </div></div>}
+    {remover && <div className="modal-backdrop"><div className="modal"><span className="modal-icon"><Trash2/></span><h2>Remover {remover.nome}?</h2><p>Você deixará de receber previsões e alertas desta cidade.</p><div><Button variant="ghost" onClick={() => setRemover(null)}>Cancelar</Button><Button variant="danger" onClick={confirmarRemocao}>Sim, remover</Button></div></div></div>}
+    {toast}
   </main>
 }
 
-function Preferences() {
-  const [daily,setDaily]=useState(true), [rain,setRain]=useState(true), [frost,setFrost]=useState(true), [saved,setSaved]=useState(false)
+function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuario; cidades: Cidade[]; cidadeId: number | null; recarregar: () => Promise<unknown>; go: (s: Screen) => void }) {
+  const [sel, setSel] = useState<number | null>(cidadeId)
+  const cidade = cidades.find((c) => c.id === sel) ?? cidades[0] ?? null
+  const [horario, setHorario] = useState('06:00')
+  const [daily, setDaily] = useState(true), [rain, setRain] = useState(true), [frost, setFrost] = useState(true)
+  const [limChuva, setLimChuva] = useState('25'), [limGeada, setLimGeada] = useState('3')
+  const [saving, setSaving] = useState(false)
+  const [telegram, setTelegram] = useState<{
+    vinculado: boolean
+    bot_username: string
+    bot_configurado: boolean
+    email_ativo: boolean
+  } | null>(null)
+  const [telegramUrl, setTelegramUrl] = useState('')
+  const [telegramLoading, setTelegramLoading] = useState(true)
+  const [telegramError, setTelegramError] = useState('')
+  const [creatingTelegramLink, setCreatingTelegramLink] = useState(false)
+  const [toast, show] = useToast()
+
+  useEffect(() => {
+    let vivo = true
+    async function carregarStatusTelegram() {
+      try {
+        const status = await api.telegramStatus()
+        if (vivo) {
+          setTelegram(status)
+          setTelegramError('')
+          if (status.vinculado) setTelegramUrl('')
+        }
+      } catch (e) {
+        if (vivo) setTelegramError(msgErro(e))
+      } finally {
+        if (vivo) setTelegramLoading(false)
+      }
+    }
+    void carregarStatusTelegram()
+    window.addEventListener('focus', carregarStatusTelegram)
+    return () => {
+      vivo = false
+      window.removeEventListener('focus', carregarStatusTelegram)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!cidade) return
+    const p = cidade.preferencia
+    setHorario(p.horario_envio); setDaily(p.receber_previsao_diaria); setRain(p.alerta_chuva_forte); setFrost(p.alerta_geada)
+    setLimChuva(String(p.limiar_chuva_mm)); setLimGeada(String(p.limiar_geada_c))
+  }, [cidade?.id, cidades])
+
+  async function salvar() {
+    if (!cidade) return
+    const chuva = Number(limChuva.replace(',', '.')), geada = Number(limGeada.replace(',', '.'))
+    if (!Number.isFinite(chuva) || chuva < 1 || chuva > 200) return show('Limite de chuva deve ficar entre 1 e 200 mm/h.', true)
+    if (!Number.isFinite(geada) || geada < -10 || geada > 10) return show('Limite de geada deve ficar entre -10 e 10 °C.', true)
+    setSaving(true)
+    try {
+      await api.salvarPreferencias(cidade.id, { horario_envio: horario, receber_previsao_diaria: daily, alerta_chuva_forte: rain, alerta_geada: frost, limiar_chuva_mm: chuva, limiar_geada_c: geada })
+      await recarregar()
+      show('Preferências salvas com sucesso.')
+    } catch (e) { show(msgErro(e), true) } finally { setSaving(false) }
+  }
+
+  async function criarLinkTelegram() {
+    setCreatingTelegramLink(true)
+    setTelegramError('')
+    try {
+      const { url } = await api.criarVinculoTelegram()
+      setTelegramUrl(url)
+    } catch (e) {
+      setTelegramError(msgErro(e))
+    } finally {
+      setCreatingTelegramLink(false)
+    }
+  }
+
+  async function desvincularTelegram() {
+    setTelegramError('')
+    try {
+      await api.desvincularTelegram()
+      setTelegram((atual) => atual ? { ...atual, vinculado: false } : atual)
+      show('Telegram desconectado.')
+    } catch (e) {
+      setTelegramError(msgErro(e))
+    }
+  }
+
+  const head = <PageHead eyebrow="CONFIGURAÇÕES" title="Preferências de alerta" desc="Escolha quando e como quer ser avisado."/>
+  if (!cidade) return <main className="content narrow">{head}<SemCidade go={go}/></main>
+
   return <main className="content narrow">
-    <PageHead eyebrow="CONFIGURAÇÕES" title="Preferências de alerta" desc="Escolha quando e como quer ser avisado."/>
-    <section className="settings-card"><div className="settings-title"><span><Sunrise/></span><div><h2>Envio diário</h2><p>Defina o melhor horário para receber sua previsão.</p></div></div><div className="form-grid"><label className="field"><span>Cidade</span><div className="select">Campinas, SP <ChevronDown/></div></label><Field label="Horário preferido" type="time" defaultValue="06:00"/></div></section>
-    <section className="settings-card"><div className="settings-title"><span><Mail/></span><div><h2>Canal de envio</h2><p>Selecione onde deseja receber seus alertas.</p></div></div><div className="channel-grid"><button className="channel selected"><Mail/><span><strong>E-mail</strong><small>Ativo • carlos@email.com</small></span><Check/></button><button className="channel" disabled><span className="wa">W</span><span><strong>WhatsApp / SMS</strong><small>Em breve</small></span><span className="soon">EM BREVE</span></button></div></section>
+    {head}
+    <section className="settings-card"><div className="settings-title"><span><Sunrise/></span><div><h2>Envio diário</h2><p>Defina o melhor horário para receber sua previsão.</p></div></div>
+      <div className="form-grid">
+        <label className="field"><span>Cidade</span><div className="input-wrap"><select value={cidade.id} onChange={(e) => setSel(Number(e.target.value))}>{cidades.map((c) => <option key={c.id} value={c.id}>{nomeCidade(c)}</option>)}</select></div></label>
+        <Field label="Horário preferido" type="time" value={horario} onChange={(e) => setHorario(e.target.value)}/>
+      </div>
+    </section>
+    <section className="settings-card"><div className="settings-title"><span><Mail/></span><div><h2>Canal de envio</h2><p>Selecione onde deseja receber seus alertas.</p></div></div>
+      <div className="channel-grid">
+        <div className={`channel ${telegram?.email_ativo ? 'selected' : ''}`}>
+          <Mail/><span><strong>E-mail</strong><small>{telegramLoading ? 'Verificando configuração...' : telegram?.email_ativo ? `Configurado • ${user.email}` : 'Desativado no servidor'}</small></span>
+          {telegram?.email_ativo && <Check/>}
+        </div>
+        <div className="channel">
+          <Send/>
+          <span>
+            <strong>Telegram</strong>
+            <small>{telegramLoading ? 'Verificando vínculo...' : !telegram?.bot_configurado ? 'Bot não configurado no servidor' : telegram.vinculado ? 'Conectado' : 'Não conectado'}</small>
+          </span>
+          {telegram?.vinculado
+            ? <Button variant="danger" onClick={desvincularTelegram}>Desconectar</Button>
+            : <Button variant="secondary" disabled={telegramLoading || creatingTelegramLink || !telegram?.bot_configurado} onClick={criarLinkTelegram}>
+                {creatingTelegramLink ? 'Gerando link...' : 'Conectar'}
+              </Button>}
+        </div>
+        {telegramError && <p className="form-error">{telegramError}</p>}
+        {telegramUrl && !telegram?.vinculado && <a className="btn btn-primary" href={telegramUrl} target="_blank" rel="noopener noreferrer">
+          <Send/> Abrir Telegram
+        </a>}
+      </div>
+    </section>
     <section className="settings-card"><div className="settings-title"><span><Bell/></span><div><h2>Quais alertas receber</h2><p>Você pode ajustar isso a qualquer momento.</p></div></div>
       <div className="toggle-list">
-        <div><Sun/><span><strong>Previsão diária</strong><small>Resumo completo do dia no horário escolhido</small></span><Toggle checked={daily} onChange={()=>setDaily(!daily)}/></div>
-        <div><CloudRain/><span><strong>Alerta de chuva forte</strong><small>Quando a chuva ultrapassar <input defaultValue="25"/> mm/h</small></span><Toggle checked={rain} onChange={()=>setRain(!rain)}/></div>
-        <div><Snowflake/><span><strong>Alerta de geada</strong><small>Quando a mínima chegar a <input defaultValue="3"/> °C ou menos</small></span><Toggle checked={frost} onChange={()=>setFrost(!frost)}/></div>
+        <div><Sun/><span><strong>Previsão diária</strong><small>Resumo completo do dia no horário escolhido</small></span><Toggle checked={daily} onChange={() => setDaily(!daily)}/></div>
+        <div><CloudRain/><span><strong>Alerta de chuva forte</strong><small>Quando a chuva ultrapassar <input inputMode="decimal" value={limChuva} onChange={(e) => setLimChuva(e.target.value)}/> mm/h</small></span><Toggle checked={rain} onChange={() => setRain(!rain)}/></div>
+        <div><Snowflake/><span><strong>Alerta de geada</strong><small>Quando a mínima chegar a <input inputMode="decimal" value={limGeada} onChange={(e) => setLimGeada(e.target.value)}/> °C ou menos</small></span><Toggle checked={frost} onChange={() => setFrost(!frost)}/></div>
       </div>
     </section>
-    <div className="save-bar"><p><CircleAlert/> Dados meteorológicos fornecidos pela Open-Meteo.</p><Button onClick={()=>{setSaved(true);setTimeout(()=>setSaved(false),2500)}}><Check/> Salvar preferências</Button></div>
-    {saved&&<div className="toast"><Check/> Preferências salvas com sucesso.</div>}
+    <div className="save-bar"><p><CircleAlert/> Dados meteorológicos fornecidos pela Open-Meteo.</p><Button disabled={saving} onClick={salvar}><Check/> {saving ? 'Salvando...' : 'Salvar preferências'}</Button></div>
+    {toast}
   </main>
 }
 
-function HistoryPage({ go }: {go:(s:Screen)=>void}) {
+function HistoryPage({ cidades, openAlerta }: { cidades: Cidade[]; openAlerta: (id: number) => void }) {
+  const [cidadeF, setCidadeF] = useState(''), [tipoF, setTipoF] = useState(''), [periodoF, setPeriodoF] = useState('30')
+  const [busca, setBusca] = useState(''), [buscaAtiva, setBuscaAtiva] = useState('')
+  const [pagina, setPagina] = useState(1)
+  const [dados, setDados] = useState<{ itens: Alerta[]; total: number; limite: number } | null>(null)
+  const [erro, setErro] = useState(''), [tick, setTick] = useState(0)
+
+  useEffect(() => { const t = setTimeout(() => { setBuscaAtiva(busca); setPagina(1) }, 300); return () => clearTimeout(t) }, [busca])
+  useEffect(() => {
+    let vivo = true
+    setErro('')
+    api.alertas({ cidadeId: cidadeF ? Number(cidadeF) : undefined, tipo: (tipoF || undefined) as Tipo | undefined, periodo: periodoF ? Number(periodoF) : undefined, busca: buscaAtiva || undefined, pagina, limite: 10 })
+      .then((r) => vivo && setDados(r)).catch((e) => vivo && setErro(msgErro(e)))
+    return () => { vivo = false }
+  }, [cidadeF, tipoF, periodoF, buscaAtiva, pagina, tick])
+
+  const mudar = (fn: (v: string) => void) => (e: React.ChangeEvent<HTMLSelectElement>) => { fn(e.target.value); setPagina(1) }
+  const paginas = dados ? Math.max(1, Math.ceil(dados.total / dados.limite)) : 1
+
   return <main className="content">
     <PageHead eyebrow="ATIVIDADE" title="Histórico de alertas" desc="Acompanhe todas as mensagens enviadas para você."/>
-    <div className="filters"><div className="search"><Search/><input placeholder="Buscar na mensagem..."/></div>{['Todas as cidades','Todos os tipos','Últimos 30 dias'].map(x=><button key={x}>{x}<ChevronDown/></button>)}</div>
-    <div className="table-card"><table><thead><tr><th>DATA E HORA</th><th>CIDADE</th><th>TIPO</th><th>STATUS</th><th>MENSAGEM</th><th></th></tr></thead><tbody>{alerts.map(a=><tr key={a.id} onClick={()=>go('detail')}><td><strong>{a.date}</strong></td><td>{a.city}</td><td><span className={`type type-${a.type.split(' ')[0].toLowerCase()}`}>{a.type==='Geada'?<Snowflake/>:a.type==='Chuva forte'?<CloudRain/>:<Sun/>}{a.type}</span></td><td><span className={`status ${a.status==='Enviado'?'sent':'failed'}`}>{a.status}</span></td><td><span className="message-preview">{a.msg}</span></td><td>→</td></tr>)}</tbody></table></div>
-    <p className="results">Mostrando 4 de 38 alertas</p>
+    <div className="filters">
+      <div className="search"><Search/><input placeholder="Buscar na mensagem..." value={busca} onChange={(e) => setBusca(e.target.value)}/></div>
+      <select value={cidadeF} onChange={mudar(setCidadeF)}><option value="">Todas as cidades</option>{cidades.map((c) => <option key={c.id} value={c.id}>{nomeCidade(c)}</option>)}</select>
+      <select value={tipoF} onChange={mudar(setTipoF)}><option value="">Todos os tipos</option>{(Object.keys(TIPO_LABEL) as Tipo[]).map((t) => <option key={t} value={t}>{TIPO_LABEL[t]}</option>)}</select>
+      <select value={periodoF} onChange={mudar(setPeriodoF)}><option value="7">Últimos 7 dias</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option><option value="">Todo o período</option></select>
+    </div>
+    {erro ? <Erro texto={erro} onRetry={() => setTick((t) => t + 1)}/> : !dados ? <Carregando texto="Carregando histórico"/> : <>
+      <div className="table-card"><table><thead><tr><th>DATA E HORA</th><th>CIDADE</th><th>TIPO</th><th>STATUS</th><th>MENSAGEM</th><th></th></tr></thead>
+        <tbody>
+          {dados.itens.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)' }}>Nenhum alerta encontrado para estes filtros.</td></tr>}
+          {dados.itens.map((a) => <tr key={a.id} onClick={() => openAlerta(a.id)}>
+            <td><strong>{fmtEnvio(a.enviado_em)}</strong></td>
+            <td>{nomeCidade(a.cidade)}</td>
+            <td><span className={`type type-${TIPO_LABEL[a.tipo].split(' ')[0].toLowerCase()}`}>{a.tipo === 'geada' ? <Snowflake/> : a.tipo === 'chuva_forte' ? <CloudRain/> : <Sun/>}{TIPO_LABEL[a.tipo]}</span></td>
+            <td><span className={`status ${a.status === 'enviado' ? 'sent' : 'failed'}`}>{a.status === 'enviado' ? 'Enviado' : 'Falhou'}</span></td>
+            <td><span className="message-preview">{a.mensagem.split('\n')[0]}</span></td>
+            <td>→</td>
+          </tr>)}
+        </tbody></table></div>
+      <p className="results">Mostrando {dados.itens.length} de {dados.total} alertas</p>
+      {paginas > 1 && <div className="pager"><Button variant="ghost" disabled={pagina <= 1} onClick={() => setPagina(pagina - 1)}>Anterior</Button>Página {pagina} de {paginas}<Button variant="ghost" disabled={pagina >= paginas} onClick={() => setPagina(pagina + 1)}>Próxima</Button></div>}
+    </>}
   </main>
 }
 
-function Detail({ go }: {go:(s:Screen)=>void}) {
+type Detalhe = Alerta & { dados: Record<string, any> | null; destinatario: string }
+
+function Detail({ alertaId, go }: { alertaId: number | null; go: (s: Screen) => void }) {
+  const [a, setA] = useState<Detalhe | null>(null)
+  const [erro, setErro] = useState('')
+  useEffect(() => {
+    if (alertaId == null) return
+    let vivo = true
+    setA(null); setErro('')
+    api.alerta(alertaId).then((r) => vivo && setA(r as Detalhe)).catch((e) => vivo && setErro(msgErro(e)))
+    return () => { vivo = false }
+  }, [alertaId])
+
+  const voltar = <button className="back" onClick={() => go('history')}><ChevronLeft/> Voltar ao histórico</button>
+  if (alertaId == null) return <main className="content narrow">{voltar}<Erro texto="Nenhum alerta selecionado."/></main>
+  if (erro) return <main className="content narrow">{voltar}<Erro texto={erro}/></main>
+  if (!a) return <main className="content narrow">{voltar}<Carregando texto="Carregando alerta"/></main>
+
+  const d = a.dados ?? {}
+  const linhas = a.mensagem.split('\n')
+  const texto = linhas.filter((l) => !l.startsWith('- '))
+  const dicas = linhas.filter((l) => l.startsWith('- ')).map((l) => l.slice(2))
+  const enviado = new Date(a.enviado_em).toLocaleString('pt-BR', { dateStyle: 'long', timeStyle: 'short' })
+
+  let hero: React.ReactNode = null
+  let dadosCard: [React.ElementType, string, string][] = []
+  if (a.tipo === 'geada') {
+    hero = <div className="frost-hero"><Snowflake/><div><small>RISCO DE GEADA</small><strong>Mínima de {r0(d.minima)}°C</strong><p>{nomeCidade(a.cidade)}</p></div></div>
+    dadosCard = [[Snowflake, 'Temperatura mínima', `${r0(d.minima)}°C`], [CircleAlert, 'Seu limite', `${d.limiar_geada_c}°C`], [CalendarDays, 'Previsto para', fmtHoraPrev(d.hora_minima)], [MapPin, 'Cidade', nomeCidade(a.cidade)]]
+  } else if (a.tipo === 'chuva_forte') {
+    hero = <div className="frost-hero"><CloudRain/><div><small>CHUVA FORTE</small><strong>Pico de {d.pico_mm} mm/h</strong><p>{nomeCidade(a.cidade)}</p></div></div>
+    dadosCard = [[CloudRain, 'Pico de chuva', `${d.pico_mm} mm/h`], [CircleAlert, 'Seu limite', `${d.limiar_chuva_mm} mm/h`], [Droplets, 'Acumulado 24h', `${d.total_24h_mm} mm`], [CalendarDays, 'Pico previsto', fmtHoraPrev(d.hora_pico)]]
+  } else if (d.dia) {
+    hero = <div className="frost-hero"><Sun/><div><small>PREVISÃO DIÁRIA</small><strong>{r0(d.dia.max)}° / {r0(d.dia.min)}°</strong><p>{nomeCidade(a.cidade)}</p></div></div>
+    dadosCard = [[Sun, 'Máxima / mínima', `${r0(d.dia.max)}° / ${r0(d.dia.min)}°`], [CloudRain, 'Chance de chuva', `${r0(d.dia.prob_chuva)}%`], [Droplets, 'Chuva prevista', `${d.dia.chuva_mm} mm`], [Wind, 'Vento', `${r0(d.atual.vento_kmh)} km/h`]]
+  }
+
   return <main className="content narrow">
-    <button className="back" onClick={()=>go('history')}><ChevronLeft/> Voltar ao histórico</button>
-    <PageHead eyebrow="DETALHE DO ALERTA" title="Alerta de geada" desc="Enviado em 10 de junho de 2025, às 05:30"/>
-    <div className="detail-status"><span><Check/> Enviado com sucesso</span><small>Para: carlos.ribeiro@email.com</small></div>
-    <section className="message-card"><div className="message-head"><Logo/><span>ALERTA IMPORTANTE</span></div><div className="frost-hero"><Snowflake/><div><small>RISCO DE GEADA</small><strong>Mínima de 2°C</strong><p>Campinas, SP • madrugada de quarta-feira</p></div></div><div className="message-body"><p>Olá, Carlos.</p><p>A temperatura pode chegar a <strong>2°C entre 3h e 6h</strong>. Há condições favoráveis para formação de geada.</p><div className="advice"><strong>Prepare-se agora</strong><ul><li>Proteja mudas e cultivos sensíveis</li><li>Evite irrigação durante a madrugada</li><li>Verifique animais em áreas abertas</li></ul></div><small>Este alerta foi gerado com dados da Open-Meteo porque a mínima prevista ficou abaixo do seu limite de 3°C.</small></div></section>
-    <section className="data-card"><h2>Dados que originaram o alerta</h2><div><span><Snowflake/><small>Temperatura mínima</small><strong>2°C</strong></span><span><Droplets/><small>Umidade</small><strong>88%</strong></span><span><Wind/><small>Vento</small><strong>4 km/h</strong></span><span><CalendarDays/><small>Previsão para</small><strong>11 jun, 04h</strong></span></div></section>
+    {voltar}
+    <PageHead eyebrow="DETALHE DO ALERTA" title={TIPO_LABEL[a.tipo]} desc={`Enviado em ${enviado}`}/>
+    <div className={`detail-status ${a.status === 'falhou' ? 'failed' : ''}`}>
+      <span>{a.status === 'enviado' ? <><Check/> Enviado com sucesso</> : <><CircleAlert/> Falha no envio{a.erro ? `: ${a.erro}` : ''}</>}</span>
+      <small>Para: {a.destinatario}</small>
+    </div>
+    <section className="message-card">
+      <div className="message-head"><Logo/><span>{a.tipo === 'previsao_diaria' ? 'PREVISÃO DIÁRIA' : 'ALERTA IMPORTANTE'}</span></div>
+      {hero}
+      <div className="message-body">
+        {texto.map((l, i) => <p key={i}>{l}</p>)}
+        {dicas.length > 0 && <div className="advice"><strong>Prepare-se agora</strong><ul>{dicas.map((t) => <li key={t}>{t}</li>)}</ul></div>}
+        <small>Dados meteorológicos: Open-Meteo.</small>
+      </div>
+    </section>
+    {dadosCard.length > 0 && <section className="data-card"><h2>Dados que originaram o alerta</h2><div>{dadosCard.map(([I, l, v]) => <span key={l}><I/><small>{l}</small><strong>{v}</strong></span>)}</div></section>}
   </main>
 }
 
-function Messages() {
-  const [tab,setTab]=useState('daily')
-  return <main className="content narrow"><PageHead eyebrow="PRÉVIA" title="Como suas mensagens chegam" desc="Exemplos de e-mails enviados pelo TempoAlerta."/>
-    <div className="tabs"><button className={tab==='daily'?'active':''} onClick={()=>setTab('daily')}>Previsão diária</button><button className={tab==='frost'?'active':''} onClick={()=>setTab('frost')}>Alerta de geada</button></div>
-    <section className="email-preview"><div className="email-bar"><span/><span/><span/><small>Prévia do e-mail</small></div><div className="email-inner"><Logo/><p>Olá, Carlos. Aqui está sua previsão para Campinas.</p>{tab==='daily'?<><div className="email-weather"><Sun/><span><small>HOJE, 16 DE JUNHO</small><strong>24°C</strong><p>Sol entre nuvens • Máx. 27° / Mín. 17°</p></span></div><div className="email-alert"><CloudRain/><span><strong>70% de chance de chuva</strong><small>Maior probabilidade entre 16h e 19h.</small></span></div></>:<div className="frost-hero"><Snowflake/><div><small>ALERTA DE GEADA</small><strong>Mínima de 2°C</strong><p>Proteja cultivos sensíveis durante a madrugada.</p></div></div>}</div></section>
+function Messages({ cidade, go }: { cidade: Cidade | null; go: (s: Screen) => void }) {
+  const [tipo, setTipo] = useState<Tipo>('previsao_diaria')
+  const [enviando, setEnviando] = useState(false)
+  const [toast, show] = useToast()
+
+  async function testar() {
+    if (!cidade) return
+    setEnviando(true)
+    try {
+      const resultado = await api.enviarTeste(cidade.id, tipo)
+      if (resultado.status === 'enviado') show('Notificação entregue por pelo menos um canal ativo. Consulte o Histórico.')
+      else show('Nenhum canal conseguiu entregar a notificação. Consulte o Histórico.', true)
+    } catch (e) { show(msgErro(e), true) } finally { setEnviando(false) }
+  }
+
+  return <main className="content narrow">
+    <PageHead eyebrow="TESTE REAL" title="Testar notificação" desc="Busca a previsão atual e envia pelos canais configurados para sua conta."/>
+    {!cidade ? <SemCidade go={go}/> : <section className="settings-card">
+      <label className="field"><span>Cidade</span><div className="input-wrap"><strong>{nomeCidade(cidade)}</strong></div></label>
+      <label className="field"><span>Tipo de notificação</span><div className="input-wrap">
+        <select value={tipo} onChange={(e) => setTipo(e.target.value as Tipo)}>
+          {(Object.keys(TIPO_LABEL) as Tipo[]).map((t) => <option key={t} value={t}>{TIPO_LABEL[t]}</option>)}
+        </select>
+      </div></label>
+      <p className="api-note"><CircleAlert/> O envio é real. Chuva forte ou geada só serão enviados se a previsão atual atingir o limite configurado.</p>
+      <Button disabled={enviando} onClick={testar}><Send/> {enviando ? 'Enviando...' : 'Enviar notificação real'}</Button>
+    </section>}
+    {toast}
   </main>
 }
 
-function States() {
-  return <main className="content"><PageHead eyebrow="SISTEMA" title="Estados da interface" desc="Respostas claras para qualquer situação."/>
-    <div className="state-grid"><article><LoaderCircle className="spin"/><h2>Atualizando previsão</h2><p>Buscando os dados mais recentes na Open-Meteo...</p></article><article><Search/><h2>Cidade não encontrada</h2><p>Confira a ortografia ou tente buscar uma cidade próxima.</p><Button variant="secondary">Tentar novamente</Button></article><article className="error"><CircleAlert/><h2>Previsão indisponível</h2><p>A API meteorológica está instável. Seus alertas continuam ativos.</p><Button variant="secondary">Recarregar dados</Button></article><article><MapPin/><h2>Nenhuma cidade ainda</h2><p>Adicione uma cidade para começar a receber previsões.</p><Button><Plus/> Adicionar cidade</Button></article></div>
-  </main>
-}
-
+/* ---------- raiz ---------- */
 export default function App() {
-  const [screen,setScreen] = useState<Screen>('auth')
-  const [theme,setTheme] = useState('light')
-  const go=(s:Screen)=>{setScreen(s);window.scrollTo({top:0,behavior:'smooth'})}
-  if(screen==='auth') return <Auth go={go}/>
-  if(screen==='onboarding') return <Onboarding go={go}/>
-  const pages:Record<string,React.ReactNode>={dashboard:<Dashboard go={go}/>,cities:<Cities/>,preferences:<Preferences/>,history:<HistoryPage go={go}/>,detail:<Detail go={go}/>,messages:<Messages/>,states:<States/>}
-  return <div className={theme}><Shell screen={screen} go={go} theme={theme} setTheme={setTheme}>{pages[screen]}</Shell></div>
+  const [screen, setScreen] = useState<Screen>('auth')
+  const [theme, setTheme] = useState('light')
+  const [user, setUser] = useState<Usuario | null>(null)
+  const [cidades, setCidades] = useState<Cidade[]>([])
+  const [cidadeId, setCidadeId] = useState<number | null>(null)
+  const [alertaId, setAlertaId] = useState<number | null>(null)
+  const [boot, setBoot] = useState(logado())
+
+  const go = (s: Screen) => { setScreen(s); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+
+  async function recarregar(preferId?: number) {
+    const lista = await api.cidades()
+    setCidades(lista)
+    setCidadeId((atual) => preferId ?? (lista.find((c) => c.id === atual)?.id ?? lista.find((c) => c.principal)?.id ?? lista[0]?.id ?? null))
+    return lista
+  }
+
+  // sessão salva (token no localStorage)
+  useEffect(() => {
+    if (!logado()) return
+    api.me()
+      .then(async (u) => { setUser(u); const l = await recarregar(); go(l.length ? 'dashboard' : 'onboarding') })
+      .catch(() => api.sair())
+      .finally(() => setBoot(false))
+  }, [])
+
+  async function aoAutenticar(u: Usuario, novo: boolean) {
+    setUser(u)
+    const l = await recarregar()
+    go(novo || l.length === 0 ? 'onboarding' : 'dashboard')
+  }
+  function sair() { api.sair(); setUser(null); setCidades([]); setCidadeId(null); setScreen('auth') }
+  const abrirAlerta = (id: number) => { setAlertaId(id); go('detail') }
+
+  if (boot) return <div className="boot"><LoaderCircle className="spin" size={40}/></div>
+  if (!user || screen === 'auth') return <Auth onAuth={aoAutenticar}/>
+  if (screen === 'onboarding') return <Onboarding user={user} onDone={async (id) => { await recarregar(id); go('dashboard') }}/>
+
+  const cidade = cidades.find((c) => c.id === cidadeId) ?? null
+  const pages: Record<string, React.ReactNode> = {
+    dashboard: <Dashboard user={user} cidade={cidade} go={go}/>,
+    cities: <Cities cidades={cidades} recarregar={recarregar} setCidadeId={setCidadeId}/>,
+    preferences: <Preferences user={user} cidades={cidades} cidadeId={cidadeId} recarregar={recarregar} go={go}/>,
+    history: <HistoryPage cidades={cidades} openAlerta={abrirAlerta}/>,
+    detail: <Detail alertaId={alertaId} go={go}/>,
+    messages: <Messages cidade={cidade} go={go}/>,
+  }
+  return <div className={theme}><Shell screen={screen} go={go} theme={theme} setTheme={setTheme} user={user} cidades={cidades} cidadeId={cidadeId} setCidadeId={setCidadeId} sair={sair}>{pages[screen]}</Shell></div>
 }
