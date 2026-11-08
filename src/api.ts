@@ -27,7 +27,7 @@ export interface Alerta {
 
 export interface Dia {
   data: string; dia_semana: string; max: number; min: number
-  chuva_mm: number; prob_chuva: number; codigo: number; descricao: string
+  chuva_mm: number; prob_chuva: number | null; codigo: number; descricao: string
 }
 export type AlertaAtivo =
   | { tipo: 'chuva_forte'; pico_mm: number; hora_pico: string; total_24h_mm: number; limiar_chuva_mm: number }

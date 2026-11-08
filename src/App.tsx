@@ -84,30 +84,35 @@ function SemCidade({ go }: { go: (s: Screen) => void }) {
   return <div className="state-grid" style={{ gridTemplateColumns: '1fr' }}><article><MapPin/><h2>Nenhuma cidade ainda</h2><p>Adicione uma cidade para começar a receber previsões.</p><Button onClick={() => go('cities')}><Plus/> Adicionar cidade</Button></article></div>
 }
 
-/* busca de cidades (Open-Meteo Geocoding, via back) */
+/* Busca explícita de cidades via Nominatim/OpenStreetMap, pelo back-end. */
 function CitySearch({ value, onChange }: { value: CidadeBusca | null; onChange: (c: CidadeBusca) => void }) {
   const [q, setQ] = useState('')
+  const [buscada, setBuscada] = useState('')
   const [res, setRes] = useState<CidadeBusca[]>([])
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState('')
 
-  useEffect(() => {
-    if (q.trim().length < 2) { setRes([]); return }
-    let vivo = true
-    setLoading(true); setErro('')
-    const t = setTimeout(() => {
-      api.buscarCidades(q.trim())
-        .then((r) => vivo && setRes(r))
-        .catch((e) => vivo && setErro(msgErro(e)))
-        .finally(() => vivo && setLoading(false))
-    }, 350)
-    return () => { vivo = false; clearTimeout(t) }
-  }, [q])
+  async function buscar() {
+    const consulta = q.trim()
+    if (consulta.length < 2 || loading) return
+    setBuscada(consulta)
+    setLoading(true); setErro(''); setRes([])
+    try {
+      setRes(await api.buscarCidades(consulta))
+    } catch (e) {
+      setErro(msgErro(e))
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return <>
-    <Field label="Busque uma cidade" icon={loading ? LoaderCircle : Search} placeholder="Digite o nome da cidade" value={q} onChange={(e) => setQ(e.target.value)}/>
+    <Field label="Busque uma cidade" icon={loading ? LoaderCircle : Search} placeholder="Digite o nome da cidade" value={q} maxLength={80}
+      onChange={(e) => { setQ(e.target.value); setRes([]); setBuscada(''); setErro('') }}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void buscar() } }}/>
+    <Button variant="secondary" disabled={loading || q.trim().length < 2} onClick={() => void buscar()}>{loading ? 'Buscando...' : 'Buscar cidade'}</Button>
     {erro && <p className="form-error">{erro}</p>}
-    {!loading && !erro && q.trim().length >= 2 && res.length === 0 && <p className="api-note"><CircleAlert/> Cidade não encontrada. Confira a ortografia ou tente uma cidade próxima.</p>}
+    {!loading && !erro && buscada === q.trim() && res.length === 0 && <p className="api-note"><CircleAlert/> Cidade não encontrada. Confira a ortografia ou tente uma cidade próxima.</p>}
     {res.map((c) => {
       const sel = !!value && value.latitude === c.latitude && value.longitude === c.longitude
       return <button key={`${c.latitude},${c.longitude}`} className={`city-result ${sel ? 'sel' : ''}`} onClick={() => onChange(c)}>
@@ -240,7 +245,7 @@ function Shell({ screen, go, theme, setTheme, user, cidades, cidadeId, setCidade
         <button className="menu"><Menu/></button>
         <div className="top-city"><MapPin/><span><small>Cidade</small>
           {cidades.length ? <select value={cidadeId ?? ''} onChange={(e) => setCidadeId(Number(e.target.value))}>{cidades.map((c) => <option key={c.id} value={c.id}>{nomeCidade(c)}</option>)}</select> : <strong>Nenhuma cidade</strong>}
-        </span><ChevronDown/></div>
+        </span></div>
         <div className="top-actions">
           <button onClick={() => setTheme(theme==='dark'?'light':'dark')}>{theme==='dark'?<Sun/>:<Moon/>}</button>
           <button className="bell" onClick={() => go('history')}><Bell/></button>
@@ -290,11 +295,11 @@ function Dashboard({ user, cidade, go }: { user: Usuario; cidade: Cidade | null;
     <section className="dashboard-grid">
       <div className="current-weather">
         <div className="weather-top">
-          <div><span className="location"><MapPin/> {nomeCidade(cidade)}</span><h2>{r0(prev.atual.temperatura)}<span>°C</span></h2><strong>{prev.atual.descricao}</strong><p>Sensação térmica de {r0(prev.atual.sensacao)}°C</p></div>
+          <div><span className="location"><MapPin/> {nomeCidade(cidade)}</span><h2>{r0(prev.atual.temperatura)}<span>°C</span></h2><strong>{prev.atual.descricao}</strong><p>Previsão meteorológica atual</p></div>
           <div className="big-weather"><Icone/></div>
         </div>
         <div className="metrics">
-          <div><CloudRain/><span><small>CHUVA</small><strong>{r0(prev.hoje.prob_chuva)}%</strong></span></div>
+          <div><CloudRain/><span><small>CHUVA PREVISTA</small><strong>{prev.hoje.chuva_mm} mm</strong></span></div>
           <div><Wind/><span><small>VENTO</small><strong>{r0(prev.atual.vento_kmh)} km/h</strong></span></div>
           <div><Droplets/><span><small>UMIDADE</small><strong>{r0(prev.atual.umidade)}%</strong></span></div>
           <div><Sunrise/><span><small>MÍN. / MÁX.</small><strong>{r0(prev.hoje.min)}° / {r0(prev.hoje.max)}°</strong></span></div>
@@ -311,7 +316,7 @@ function Dashboard({ user, cidade, go }: { user: Usuario; cidade: Cidade | null;
     </section>
     <section className="forecast card">
       <div className="section-title"><div><span className="eyebrow">PRÓXIMOS DIAS</span><h2>Previsão de 7 dias</h2></div><span className="updated">Atualizado {atualizadoHa(prev.atualizado_em)}</span></div>
-      <div className="forecast-row">{prev.dias.map((d, i) => { const I = iconeClima(d.codigo); return <div className={i === 0 ? 'today' : ''} key={d.data}><strong>{d.dia_semana}</strong><I/><span><b>{r0(d.max)}°</b> {r0(d.min)}°</span><small><Droplets/> {r0(d.prob_chuva)}%</small></div> })}</div>
+      <div className="forecast-row">{prev.dias.map((d, i) => { const I = iconeClima(d.codigo); return <div className={i === 0 ? 'today' : ''} key={d.data}><strong>{d.dia_semana}</strong><I/><span><b>{r0(d.max)}°</b> {r0(d.min)}°</span><small><Droplets/> {d.chuva_mm} mm</small></div> })}</div>
     </section>
   </main>
 }
@@ -505,7 +510,7 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
         <div><Snowflake/><span><strong>Alerta de geada</strong><small>Quando a mínima chegar a <input inputMode="decimal" value={limGeada} onChange={(e) => setLimGeada(e.target.value)}/> °C ou menos</small></span><Toggle checked={frost} onChange={() => setFrost(!frost)}/></div>
       </div>
     </section>
-    <div className="save-bar"><p><CircleAlert/> Dados meteorológicos fornecidos pela Open-Meteo.</p><Button disabled={saving} onClick={salvar}><Check/> {saving ? 'Salvando...' : 'Salvar preferências'}</Button></div>
+    <div className="save-bar"><p><CircleAlert/> Previsão: MET Norway com Open-Meteo como contingência. Busca de cidades: OpenStreetMap.</p><Button disabled={saving} onClick={salvar}><Check/> {saving ? 'Salvando...' : 'Salvar preferências'}</Button></div>
     {toast}
   </main>
 }
@@ -590,7 +595,7 @@ function Detail({ alertaId, go }: { alertaId: number | null; go: (s: Screen) => 
     dadosCard = [[CloudRain, 'Pico de chuva', `${d.pico_mm} mm/h`], [CircleAlert, 'Seu limite', `${d.limiar_chuva_mm} mm/h`], [Droplets, 'Acumulado 24h', `${d.total_24h_mm} mm`], [CalendarDays, 'Pico previsto', fmtHoraPrev(d.hora_pico)]]
   } else if (d.dia) {
     hero = <div className="frost-hero"><Sun/><div><small>PREVISÃO DIÁRIA</small><strong>{r0(d.dia.max)}° / {r0(d.dia.min)}°</strong><p>{nomeCidade(a.cidade)}</p></div></div>
-    dadosCard = [[Sun, 'Máxima / mínima', `${r0(d.dia.max)}° / ${r0(d.dia.min)}°`], [CloudRain, 'Chance de chuva', `${r0(d.dia.prob_chuva)}%`], [Droplets, 'Chuva prevista', `${d.dia.chuva_mm} mm`], [Wind, 'Vento', `${r0(d.atual.vento_kmh)} km/h`]]
+    dadosCard = [[Sun, 'Máxima / mínima', `${r0(d.dia.max)}° / ${r0(d.dia.min)}°`], [Droplets, 'Chuva prevista', `${d.dia.chuva_mm} mm`], [Wind, 'Vento', `${r0(d.atual.vento_kmh)} km/h`]]
   }
 
   return <main className="content narrow">
@@ -606,7 +611,7 @@ function Detail({ alertaId, go }: { alertaId: number | null; go: (s: Screen) => 
       <div className="message-body">
         {texto.map((l, i) => <p key={i}>{l}</p>)}
         {dicas.length > 0 && <div className="advice"><strong>Prepare-se agora</strong><ul>{dicas.map((t) => <li key={t}>{t}</li>)}</ul></div>}
-        <small>Dados meteorológicos: Open-Meteo.</small>
+        <small>Previsão: MET Norway com Open-Meteo como contingência. Busca de cidades: OpenStreetMap.</small>
       </div>
     </section>
     {dadosCard.length > 0 && <section className="data-card"><h2>Dados que originaram o alerta</h2><div>{dadosCard.map(([I, l, v]) => <span key={l}><I/><small>{l}</small><strong>{v}</strong></span>)}</div></section>}
