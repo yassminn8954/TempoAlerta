@@ -117,4 +117,14 @@ export const api = {
   }>('GET', '/telegram/status'),
   criarVinculoTelegram: () => req<{ url: string; expira_em: string }>('POST', '/telegram/vinculo'),
   desvincularTelegram: () => req<void>('DELETE', '/telegram/vinculo'),
+
+  whatsappStatus: () => req<{
+    vinculado: boolean
+    telefone_final: string | null
+    configurado: boolean
+    webhook_configurado: boolean
+    template_configurado: boolean
+  }>('GET', '/whatsapp/status'),
+  criarVinculoWhatsApp: () => req<{ url: string; texto: string; expira_em: string }>('POST', '/whatsapp/vinculo'),
+  desvincularWhatsApp: () => req<void>('DELETE', '/whatsapp/vinculo'),
 }

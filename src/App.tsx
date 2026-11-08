@@ -3,7 +3,7 @@ import {
   AlertTriangle, Bell, CalendarDays, Check, ChevronDown, ChevronLeft, CircleAlert,
   Cloud, CloudLightning, CloudRain, Droplets, Eye, EyeOff, History, Home, LoaderCircle, LogOut,
   Mail, MapPin, Menu, Moon, Plus, Search, Send, Settings, ShieldCheck, Snowflake, Star,
-  Sun, Sunrise, Trash2, User, Users, Wind, X
+  MessageCircle, Sun, Sunrise, Trash2, User, Users, Wind, X
 } from 'lucide-react'
 import {
   api, ApiError, logado,
@@ -398,6 +398,11 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
   const [telegramLoading, setTelegramLoading] = useState(true)
   const [telegramError, setTelegramError] = useState('')
   const [creatingTelegramLink, setCreatingTelegramLink] = useState(false)
+  const [whatsapp, setWhatsApp] = useState<Awaited<ReturnType<typeof api.whatsappStatus>> | null>(null)
+  const [whatsappUrl, setWhatsAppUrl] = useState('')
+  const [whatsappLoading, setWhatsAppLoading] = useState(true)
+  const [whatsappError, setWhatsAppError] = useState('')
+  const [creatingWhatsAppLink, setCreatingWhatsAppLink] = useState(false)
   const [toast, show] = useToast()
 
   useEffect(() => {
@@ -416,11 +421,28 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
         if (vivo) setTelegramLoading(false)
       }
     }
+    async function carregarStatusWhatsApp() {
+      try {
+        const status = await api.whatsappStatus()
+        if (vivo) {
+          setWhatsApp(status)
+          setWhatsAppError('')
+          if (status.vinculado) setWhatsAppUrl('')
+        }
+      } catch (e) {
+        if (vivo) setWhatsAppError(msgErro(e))
+      } finally {
+        if (vivo) setWhatsAppLoading(false)
+      }
+    }
     void carregarStatusTelegram()
+    void carregarStatusWhatsApp()
     window.addEventListener('focus', carregarStatusTelegram)
+    window.addEventListener('focus', carregarStatusWhatsApp)
     return () => {
       vivo = false
       window.removeEventListener('focus', carregarStatusTelegram)
+      window.removeEventListener('focus', carregarStatusWhatsApp)
     }
   }, [])
 
@@ -468,6 +490,30 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
     }
   }
 
+  async function criarLinkWhatsApp() {
+    setCreatingWhatsAppLink(true)
+    setWhatsAppError('')
+    try {
+      const { url } = await api.criarVinculoWhatsApp()
+      setWhatsAppUrl(url)
+    } catch (e) {
+      setWhatsAppError(msgErro(e))
+    } finally {
+      setCreatingWhatsAppLink(false)
+    }
+  }
+
+  async function desvincularWhatsApp() {
+    setWhatsAppError('')
+    try {
+      await api.desvincularWhatsApp()
+      setWhatsApp((atual) => atual ? { ...atual, vinculado: false, telefone_final: null } : atual)
+      show('WhatsApp desconectado.')
+    } catch (e) {
+      setWhatsAppError(msgErro(e))
+    }
+  }
+
   const head = <PageHead eyebrow="CONFIGURAÇÕES" title="Preferências de alerta" desc="Escolha quando e como quer ser avisado."/>
   if (!cidade) return <main className="content narrow">{head}<SemCidade go={go}/></main>
 
@@ -500,6 +546,31 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
         {telegramError && <p className="form-error">{telegramError}</p>}
         {telegramUrl && !telegram?.vinculado && <a className="btn btn-primary" href={telegramUrl} target="_blank" rel="noopener noreferrer">
           <Send/> Abrir Telegram
+        </a>}
+        <div className={`channel ${whatsapp?.vinculado ? 'selected' : ''}`}>
+          <MessageCircle/>
+          <span>
+            <strong>WhatsApp</strong>
+            <small>
+              {whatsappLoading ? 'Verificando configuração...' : !whatsapp?.configurado
+                ? 'Cloud API não configurada no servidor'
+                : !whatsapp.webhook_configurado
+                  ? 'Webhook da Meta não configurado no servidor'
+                : whatsapp.vinculado
+                  ? `Conectado • final ${whatsapp.telefone_final}`
+                  : 'Não conectado'}
+            </small>
+          </span>
+          {whatsapp?.vinculado
+            ? <Button variant="danger" onClick={desvincularWhatsApp}>Desconectar</Button>
+            : <Button variant="secondary" disabled={whatsappLoading || creatingWhatsAppLink || !whatsapp?.configurado || !whatsapp.webhook_configurado} onClick={criarLinkWhatsApp}>
+                {creatingWhatsAppLink ? 'Gerando link...' : 'Conectar'}
+              </Button>}
+        </div>
+        <small>Ao conectar, você autoriza o envio dos alertas configurados. Alertas proativos dependem de um template Utility aprovado pela Meta.</small>
+        {whatsappError && <p className="form-error">{whatsappError}</p>}
+        {whatsappUrl && !whatsapp?.vinculado && <a className="btn btn-primary" href={whatsappUrl} target="_blank" rel="noopener noreferrer">
+          <MessageCircle/> Abrir WhatsApp e confirmar
         </a>}
       </div>
     </section>
