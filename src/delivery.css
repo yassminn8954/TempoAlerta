@@ -1,0 +1,209 @@
+.delivery-card .settings-title {
+  margin-bottom: 20px;
+}
+
+.delivery-city {
+  max-width: 420px;
+  margin: 0 0 22px;
+}
+
+.delivery-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px 14px 0 0;
+  background: var(--canvas);
+}
+
+.delivery-count {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.delivery-toolbar .btn {
+  min-height: 38px;
+  padding: 0 13px;
+  font-size: 12px;
+}
+
+.delivery-time-list {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 14px 14px;
+}
+
+.delivery-time-row {
+  display: flex;
+  min-height: 78px;
+  align-items: center;
+  gap: 13px;
+  padding: 12px 15px;
+  background: var(--surface);
+}
+
+.delivery-time-row + .delivery-time-row {
+  border-top: 1px solid var(--line);
+}
+
+.delivery-time-number {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+.delivery-period-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  place-items: center;
+  border-radius: 12px;
+  background: #e9f8fe;
+  color: #087ead;
+}
+
+.dark .delivery-period-icon {
+  background: #123044;
+  color: #38bdf8;
+}
+
+.delivery-time-description {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.delivery-time-description strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.delivery-time-description small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.delivery-time-input input {
+  width: 116px;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  outline: 0;
+  background: var(--canvas);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.delivery-time-input input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px #0ea5e917;
+}
+
+.delivery-remove {
+  display: grid;
+  flex: none;
+  place-items: center;
+  border-color: transparent;
+  background: transparent;
+}
+
+.delivery-remove:hover {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.dark .delivery-remove:hover {
+  border-color: #7f1d1d;
+  background: #3b1b25;
+}
+
+.delivery-empty {
+  display: flex;
+  min-height: 92px;
+  align-items: center;
+  gap: 13px;
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  color: var(--primary-dark);
+}
+
+.delivery-empty > span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.delivery-empty strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.delivery-empty small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.delivery-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.delivery-note svg {
+  flex: none;
+  color: var(--primary);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+@media (max-width: 560px) {
+  .delivery-toolbar {
+    padding: 11px;
+  }
+
+  .delivery-time-row {
+    gap: 9px;
+    padding: 11px 9px;
+  }
+
+  .delivery-period-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .delivery-time-description small {
+    display: none;
+  }
+
+  .delivery-time-input input {
+    width: 96px;
+  }
+
+  .delivery-remove {
+    width: 34px;
+    height: 34px;
+  }
+}

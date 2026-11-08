@@ -3,12 +3,13 @@ import {
   AlertTriangle, Bell, CalendarDays, Check, ChevronDown, ChevronLeft, CircleAlert,
   Cloud, CloudLightning, CloudRain, Droplets, Eye, EyeOff, History, Home, LoaderCircle, LogOut,
   Mail, MapPin, Menu, Moon, Plus, Search, Send, Settings, ShieldCheck, Snowflake, Star,
-  MessageCircle, Sun, Sunrise, Trash2, User, Users, Wind, X
+  Sun, Sunrise, Trash2, User, Users, Wind, X
 } from 'lucide-react'
 import {
   api, ApiError, logado,
   type Alerta, type Cidade, type CidadeBusca, type Perfil, type PrevisaoResp, type Tipo, type Usuario,
 } from './api'
+import './delivery.css'
 
 type Screen = 'auth' | 'onboarding' | 'dashboard' | 'cities' | 'preferences' | 'history' | 'detail' | 'messages'
 
@@ -360,7 +361,7 @@ function Cities({ cidades, recarregar, setCidadeId }: { cidades: Cidade[]; recar
       {cidades.length === 0 && <div className="state-grid" style={{ gridTemplateColumns: '1fr' }}><article><MapPin/><h2>Nenhuma cidade ainda</h2><p>Adicione uma cidade para começar a receber previsões.</p></article></div>}
       {cidades.map((c) => <article className="city-card" key={c.id}>
         <CityWeather id={c.id}/>
-        <div><span className="eyebrow">{c.principal ? 'CIDADE PRINCIPAL' : 'CIDADE MONITORADA'}</span><h2>{nomeCidade(c)}</h2><p><MapPin/> {c.latitude.toFixed(2)}, {c.longitude.toFixed(2)} • Resumo diário às {c.preferencia.horario_envio}</p></div>
+        <div><span className="eyebrow">{c.principal ? 'CIDADE PRINCIPAL' : 'CIDADE MONITORADA'}</span><h2>{nomeCidade(c)}</h2><p><MapPin/> {c.latitude.toFixed(2)}, {c.longitude.toFixed(2)} • {c.preferencia.horarios_previsao.length ? c.preferencia.horarios_previsao.join(' · ') : 'previsões diárias desativadas'}</p></div>
         <div className="city-actions">
           {!c.principal && <Button variant="secondary" onClick={() => principal(c)}><Star/> Definir principal</Button>}
           <button className="icon danger" aria-label={`Remover ${c.nome}`} onClick={() => setRemover(c)}><Trash2/></button>
@@ -384,8 +385,8 @@ function Cities({ cidades, recarregar, setCidadeId }: { cidades: Cidade[]; recar
 function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuario; cidades: Cidade[]; cidadeId: number | null; recarregar: () => Promise<unknown>; go: (s: Screen) => void }) {
   const [sel, setSel] = useState<number | null>(cidadeId)
   const cidade = cidades.find((c) => c.id === sel) ?? cidades[0] ?? null
-  const [horario, setHorario] = useState('06:00')
-  const [daily, setDaily] = useState(true), [rain, setRain] = useState(true), [frost, setFrost] = useState(true)
+  const [horarios, setHorarios] = useState<string[]>(['06:00', '16:00'])
+  const [rain, setRain] = useState(true), [frost, setFrost] = useState(true)
   const [limChuva, setLimChuva] = useState('25'), [limGeada, setLimGeada] = useState('3')
   const [saving, setSaving] = useState(false)
   const [telegram, setTelegram] = useState<{
@@ -398,11 +399,6 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
   const [telegramLoading, setTelegramLoading] = useState(true)
   const [telegramError, setTelegramError] = useState('')
   const [creatingTelegramLink, setCreatingTelegramLink] = useState(false)
-  const [whatsapp, setWhatsApp] = useState<Awaited<ReturnType<typeof api.whatsappStatus>> | null>(null)
-  const [whatsappUrl, setWhatsAppUrl] = useState('')
-  const [whatsappLoading, setWhatsAppLoading] = useState(true)
-  const [whatsappError, setWhatsAppError] = useState('')
-  const [creatingWhatsAppLink, setCreatingWhatsAppLink] = useState(false)
   const [toast, show] = useToast()
 
   useEffect(() => {
@@ -421,35 +417,19 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
         if (vivo) setTelegramLoading(false)
       }
     }
-    async function carregarStatusWhatsApp() {
-      try {
-        const status = await api.whatsappStatus()
-        if (vivo) {
-          setWhatsApp(status)
-          setWhatsAppError('')
-          if (status.vinculado) setWhatsAppUrl('')
-        }
-      } catch (e) {
-        if (vivo) setWhatsAppError(msgErro(e))
-      } finally {
-        if (vivo) setWhatsAppLoading(false)
-      }
-    }
     void carregarStatusTelegram()
-    void carregarStatusWhatsApp()
     window.addEventListener('focus', carregarStatusTelegram)
-    window.addEventListener('focus', carregarStatusWhatsApp)
     return () => {
       vivo = false
       window.removeEventListener('focus', carregarStatusTelegram)
-      window.removeEventListener('focus', carregarStatusWhatsApp)
     }
   }, [])
 
   useEffect(() => {
     if (!cidade) return
     const p = cidade.preferencia
-    setHorario(p.horario_envio); setDaily(p.receber_previsao_diaria); setRain(p.alerta_chuva_forte); setFrost(p.alerta_geada)
+    setHorarios(p.horarios_previsao)
+    setRain(p.alerta_chuva_forte); setFrost(p.alerta_geada)
     setLimChuva(String(p.limiar_chuva_mm)); setLimGeada(String(p.limiar_geada_c))
   }, [cidade?.id, cidades])
 
@@ -458,9 +438,16 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
     const chuva = Number(limChuva.replace(',', '.')), geada = Number(limGeada.replace(',', '.'))
     if (!Number.isFinite(chuva) || chuva < 1 || chuva > 200) return show('Limite de chuva deve ficar entre 1 e 200 mm/h.', true)
     if (!Number.isFinite(geada) || geada < -10 || geada > 10) return show('Limite de geada deve ficar entre -10 e 10 °C.', true)
+    if (new Set(horarios).size !== horarios.length) return show('Escolha horários diferentes para cada previsão.', true)
     setSaving(true)
     try {
-      await api.salvarPreferencias(cidade.id, { horario_envio: horario, receber_previsao_diaria: daily, alerta_chuva_forte: rain, alerta_geada: frost, limiar_chuva_mm: chuva, limiar_geada_c: geada })
+      await api.salvarPreferencias(cidade.id, {
+        horarios_previsao: horarios,
+        alerta_chuva_forte: rain,
+        alerta_geada: frost,
+        limiar_chuva_mm: chuva,
+        limiar_geada_c: geada,
+      })
       await recarregar()
       show('Preferências salvas com sucesso.')
     } catch (e) { show(msgErro(e), true) } finally { setSaving(false) }
@@ -490,28 +477,22 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
     }
   }
 
-  async function criarLinkWhatsApp() {
-    setCreatingWhatsAppLink(true)
-    setWhatsAppError('')
-    try {
-      const { url } = await api.criarVinculoWhatsApp()
-      setWhatsAppUrl(url)
-    } catch (e) {
-      setWhatsAppError(msgErro(e))
-    } finally {
-      setCreatingWhatsAppLink(false)
-    }
+  function adicionarHorario() {
+    const candidatos = ['12:00', '20:00', '09:00', '15:00', '18:00', '08:00', '10:00', '14:00', '17:00', '21:00', '22:00']
+    setHorarios((atuais) => {
+      if (atuais.length >= 4) return atuais
+      const sugestao = candidatos.find((hora) => !atuais.includes(hora))
+        ?? Array.from({ length: 24 }, (_, hora) => `${String(hora).padStart(2, '0')}:00`).find((hora) => !atuais.includes(hora))
+      return sugestao ? [...atuais, sugestao] : atuais
+    })
   }
 
-  async function desvincularWhatsApp() {
-    setWhatsAppError('')
-    try {
-      await api.desvincularWhatsApp()
-      setWhatsApp((atual) => atual ? { ...atual, vinculado: false, telefone_final: null } : atual)
-      show('WhatsApp desconectado.')
-    } catch (e) {
-      setWhatsAppError(msgErro(e))
-    }
+  function periodoHorario(horario: string) {
+    const hora = Number(horario.slice(0, 2))
+    if (hora < 5) return { nome: 'Madrugada', descricao: 'Atualização para as primeiras horas', icone: Moon }
+    if (hora < 12) return { nome: 'Manhã', descricao: 'Resumo para começar o dia', icone: Sunrise }
+    if (hora < 18) return { nome: 'Tarde', descricao: 'Atualização do restante do dia', icone: Sun }
+    return { nome: 'Noite', descricao: 'Condições para as próximas horas', icone: Moon }
   }
 
   const head = <PageHead eyebrow="CONFIGURAÇÕES" title="Preferências de alerta" desc="Escolha quando e como quer ser avisado."/>
@@ -519,11 +500,27 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
 
   return <main className="content narrow">
     {head}
-    <section className="settings-card"><div className="settings-title"><span><Sunrise/></span><div><h2>Envio diário</h2><p>Defina o melhor horário para receber sua previsão.</p></div></div>
-      <div className="form-grid">
-        <label className="field"><span>Cidade</span><div className="input-wrap"><select value={cidade.id} onChange={(e) => setSel(Number(e.target.value))}>{cidades.map((c) => <option key={c.id} value={c.id}>{nomeCidade(c)}</option>)}</select></div></label>
-        <Field label="Horário preferido" type="time" value={horario} onChange={(e) => setHorario(e.target.value)}/>
+    <section className="settings-card delivery-card">
+      <div className="settings-title"><span><Sunrise/></span><div><h2>Horários das previsões</h2><p>Escolha até quatro momentos para receber uma mensagem com a previsão atualizada.</p></div></div>
+      <label className="field delivery-city"><span>Cidade acompanhada</span><div className="input-wrap"><select value={cidade.id} onChange={(e) => setSel(Number(e.target.value))}>{cidades.map((c) => <option key={c.id} value={c.id}>{nomeCidade(c)}</option>)}</select></div></label>
+      <div className="delivery-toolbar">
+        <span className="delivery-count">{horarios.length} de 4 horários</span>
+        <Button variant="secondary" disabled={horarios.length >= 4} onClick={adicionarHorario}><Plus/> Adicionar horário</Button>
       </div>
+      {horarios.length === 0
+        ? <div className="delivery-empty"><Sunrise/><span><strong>Nenhum horário configurado</strong><small>Adicione um horário para voltar a receber as previsões diárias.</small></span></div>
+        : <div className="delivery-time-list">{horarios.map((horario, index) => {
+          const periodo = periodoHorario(horario)
+          const Icon = periodo.icone
+          return <div className="delivery-time-row" key={index}>
+            <span className="delivery-time-number">{String(index + 1).padStart(2, '0')}</span>
+            <span className="delivery-period-icon"><Icon size={19}/></span>
+            <span className="delivery-time-description"><strong>{periodo.nome}</strong><small>{periodo.descricao}</small></span>
+            <label className="delivery-time-input"><span className="sr-only">Horário da previsão {index + 1}</span><input type="time" value={horario} onChange={(e) => setHorarios((atuais) => atuais.map((valor, i) => i === index ? e.target.value : valor))}/></label>
+            <button className="icon danger delivery-remove" aria-label={`Remover horário ${horario}`} onClick={() => setHorarios((atuais) => atuais.filter((_, i) => i !== index))}><Trash2 size={17}/></button>
+          </div>
+        })}</div>}
+      <p className="delivery-note"><CircleAlert size={16}/> Cada mensagem é adaptada ao período do horário escolhido e enviada no minuto configurado.</p>
     </section>
     <section className="settings-card"><div className="settings-title"><span><Mail/></span><div><h2>Canal de envio</h2><p>Selecione onde deseja receber seus alertas.</p></div></div>
       <div className="channel-grid">
@@ -547,36 +544,10 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
         {telegramUrl && !telegram?.vinculado && <a className="btn btn-primary" href={telegramUrl} target="_blank" rel="noopener noreferrer">
           <Send/> Abrir Telegram
         </a>}
-        <div className={`channel ${whatsapp?.vinculado ? 'selected' : ''}`}>
-          <MessageCircle/>
-          <span>
-            <strong>WhatsApp</strong>
-            <small>
-              {whatsappLoading ? 'Verificando configuração...' : !whatsapp?.configurado
-                ? 'Cloud API não configurada no servidor'
-                : !whatsapp.webhook_configurado
-                  ? 'Webhook da Meta não configurado no servidor'
-                : whatsapp.vinculado
-                  ? `Conectado • final ${whatsapp.telefone_final}`
-                  : 'Não conectado'}
-            </small>
-          </span>
-          {whatsapp?.vinculado
-            ? <Button variant="danger" onClick={desvincularWhatsApp}>Desconectar</Button>
-            : <Button variant="secondary" disabled={whatsappLoading || creatingWhatsAppLink || !whatsapp?.configurado || !whatsapp.webhook_configurado} onClick={criarLinkWhatsApp}>
-                {creatingWhatsAppLink ? 'Gerando link...' : 'Conectar'}
-              </Button>}
-        </div>
-        <small>Ao conectar, você autoriza o envio dos alertas configurados. Alertas proativos dependem de um template Utility aprovado pela Meta.</small>
-        {whatsappError && <p className="form-error">{whatsappError}</p>}
-        {whatsappUrl && !whatsapp?.vinculado && <a className="btn btn-primary" href={whatsappUrl} target="_blank" rel="noopener noreferrer">
-          <MessageCircle/> Abrir WhatsApp e confirmar
-        </a>}
       </div>
     </section>
     <section className="settings-card"><div className="settings-title"><span><Bell/></span><div><h2>Quais alertas receber</h2><p>Você pode ajustar isso a qualquer momento.</p></div></div>
       <div className="toggle-list">
-        <div><Sun/><span><strong>Previsão diária</strong><small>Resumo completo do dia no horário escolhido</small></span><Toggle checked={daily} onChange={() => setDaily(!daily)}/></div>
         <div><CloudRain/><span><strong>Alerta de chuva forte</strong><small>Quando a chuva ultrapassar <input inputMode="decimal" value={limChuva} onChange={(e) => setLimChuva(e.target.value)}/> mm/h</small></span><Toggle checked={rain} onChange={() => setRain(!rain)}/></div>
         <div><Snowflake/><span><strong>Alerta de geada</strong><small>Quando a mínima chegar a <input inputMode="decimal" value={limGeada} onChange={(e) => setLimGeada(e.target.value)}/> °C ou menos</small></span><Toggle checked={frost} onChange={() => setFrost(!frost)}/></div>
       </div>
@@ -692,7 +663,17 @@ function Detail({ alertaId, go }: { alertaId: number | null; go: (s: Screen) => 
 function Messages({ cidade, go }: { cidade: Cidade | null; go: (s: Screen) => void }) {
   const [tipo, setTipo] = useState<Tipo>('previsao_diaria')
   const [enviando, setEnviando] = useState(false)
+  const [canais, setCanais] = useState<Awaited<ReturnType<typeof api.telegramStatus>> | null>(null)
+  const [erroCanais, setErroCanais] = useState('')
   const [toast, show] = useToast()
+
+  useEffect(() => {
+    let vivo = true
+    api.telegramStatus()
+      .then((status) => vivo && setCanais(status))
+      .catch((e) => vivo && setErroCanais(msgErro(e)))
+    return () => { vivo = false }
+  }, [])
 
   async function testar() {
     if (!cidade) return
@@ -700,7 +681,7 @@ function Messages({ cidade, go }: { cidade: Cidade | null; go: (s: Screen) => vo
     try {
       const resultado = await api.enviarTeste(cidade.id, tipo)
       if (resultado.status === 'enviado') show('Notificação entregue por pelo menos um canal ativo. Consulte o Histórico.')
-      else show('Nenhum canal conseguiu entregar a notificação. Consulte o Histórico.', true)
+      else show(`Nenhum canal entregou a notificação. ${resultado.erro ?? 'Consulte o detalhe no Histórico.'}`, true)
     } catch (e) { show(msgErro(e), true) } finally { setEnviando(false) }
   }
 
@@ -713,6 +694,13 @@ function Messages({ cidade, go }: { cidade: Cidade | null; go: (s: Screen) => vo
           {(Object.keys(TIPO_LABEL) as Tipo[]).map((t) => <option key={t} value={t}>{TIPO_LABEL[t]}</option>)}
         </select>
       </div></label>
+      {erroCanais
+        ? <p className="form-error">Não foi possível verificar os canais: {erroCanais}</p>
+        : canais && <p className="api-note">
+            <CircleAlert/> Canais: e-mail {canais.email_ativo ? 'SMTP ativo' : 'desativado'}; Telegram {
+              !canais.bot_configurado ? 'bot não configurado' : canais.vinculado ? 'vinculado' : 'conta não vinculada'
+            }.
+          </p>}
       <p className="api-note"><CircleAlert/> O envio é real. Chuva forte ou geada só serão enviados se a previsão atual atingir o limite configurado.</p>
       <Button disabled={enviando} onClick={testar}><Send/> {enviando ? 'Enviando...' : 'Enviar notificação real'}</Button>
     </section>}

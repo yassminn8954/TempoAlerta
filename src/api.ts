@@ -9,7 +9,12 @@ export type Perfil = 'produtor_rural' | 'organizador_eventos'
 export interface Usuario { id: number; nome: string; email: string; perfil: Perfil }
 export interface Preferencia {
   horario_envio: string
+  horario_envio_manha: string
+  horario_envio_tarde: string
+  horarios_previsao: string[]
   receber_previsao_diaria: boolean
+  receber_previsao_manha: boolean
+  receber_previsao_tarde: boolean
   alerta_chuva_forte: boolean
   alerta_geada: boolean
   limiar_chuva_mm: number
@@ -107,7 +112,11 @@ export const api = {
   alertas: (f: { cidadeId?: number; tipo?: Tipo; periodo?: number; busca?: string; pagina?: number; limite?: number } = {}) =>
     req<{ itens: Alerta[]; total: number; pagina: number; limite: number }>('GET', `/alertas${qs(f)}`),
   alerta: (id: number) => req<Alerta & { dados: Record<string, unknown> | null; destinatario: string }>('GET', `/alertas/${id}`),
-  enviarTeste: (cidadeId: number, tipo: Tipo) => req<{ id: number; status: 'enviado' | 'falhou' }>('POST', '/alertas/teste', { cidadeId, tipo }),
+  enviarTeste: (cidadeId: number, tipo: Tipo) => req<{
+    id: number
+    status: 'enviado' | 'falhou'
+    erro: string | null
+  }>('POST', '/alertas/teste', { cidadeId, tipo }),
 
   telegramStatus: () => req<{
     vinculado: boolean
@@ -118,13 +127,4 @@ export const api = {
   criarVinculoTelegram: () => req<{ url: string; expira_em: string }>('POST', '/telegram/vinculo'),
   desvincularTelegram: () => req<void>('DELETE', '/telegram/vinculo'),
 
-  whatsappStatus: () => req<{
-    vinculado: boolean
-    telefone_final: string | null
-    configurado: boolean
-    webhook_configurado: boolean
-    template_configurado: boolean
-  }>('GET', '/whatsapp/status'),
-  criarVinculoWhatsApp: () => req<{ url: string; texto: string; expira_em: string }>('POST', '/whatsapp/vinculo'),
-  desvincularWhatsApp: () => req<void>('DELETE', '/whatsapp/vinculo'),
 }
