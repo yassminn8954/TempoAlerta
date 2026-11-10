@@ -63,11 +63,20 @@ export const setToken = (t: string | null) => {
 export const logado = () => !!token
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(BASE + path, {
+  let res: Response
+  try {
+    res = await fetch(BASE + path, {
     method,
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
-  })
+    signal: AbortSignal.timeout(60_000),
+    })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new ApiError(0, 'O servidor demorou mais de 60 segundos para responder. Verifique os logs da API e tente novamente.')
+    }
+    throw error
+  }
   if (res.status === 204) return undefined as T
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
