@@ -399,6 +399,12 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
   const [telegramLoading, setTelegramLoading] = useState(true)
   const [telegramError, setTelegramError] = useState('')
   const [creatingTelegramLink, setCreatingTelegramLink] = useState(false)
+  const [emailDestino, setEmailDestino] = useState(user.email)
+  const [emailAtivo, setEmailAtivo] = useState(false)
+  const [emailLoading, setEmailLoading] = useState(true)
+  const [emailAberto, setEmailAberto] = useState(false)
+  const [salvandoEmail, setSalvandoEmail] = useState(false)
+  const [emailError, setEmailError] = useState('')
   const [toast, show] = useToast()
 
   useEffect(() => {
@@ -418,6 +424,17 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
       }
     }
     void carregarStatusTelegram()
+    void api.emailDestino().then((status) => {
+      if (vivo) {
+        setEmailDestino(status.destinatario)
+        setEmailAtivo(status.ativo)
+        setEmailError('')
+      }
+    }).catch((e) => {
+      if (vivo) setEmailError(msgErro(e))
+    }).finally(() => {
+      if (vivo) setEmailLoading(false)
+    })
     window.addEventListener('focus', carregarStatusTelegram)
     return () => {
       vivo = false
@@ -477,6 +494,22 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
     }
   }
 
+  async function salvarEmailDestino(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setSalvandoEmail(true)
+    setEmailError('')
+    try {
+      const status = await api.salvarEmailDestino(emailDestino)
+      setEmailDestino(status.destinatario)
+      setEmailAtivo(status.ativo)
+      show('E-mail destinatário salvo com sucesso.')
+    } catch (e) {
+      setEmailError(msgErro(e))
+    } finally {
+      setSalvandoEmail(false)
+    }
+  }
+
   function adicionarHorario() {
     const candidatos = ['12:00', '20:00', '09:00', '15:00', '18:00', '08:00', '10:00', '14:00', '17:00', '21:00', '22:00']
     setHorarios((atuais) => {
@@ -524,9 +557,20 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
     </section>
     <section className="settings-card"><div className="settings-title"><span><Mail/></span><div><h2>Canal de envio</h2><p>Selecione onde deseja receber seus alertas.</p></div></div>
       <div className="channel-grid">
-        <div className={`channel ${telegram?.email_ativo ? 'selected' : ''}`}>
-          <Mail/><span><strong>E-mail</strong><small>{telegramLoading ? 'Verificando configuração...' : telegram?.email_ativo ? `Configurado • ${user.email}` : 'Desativado no servidor'}</small></span>
-          {telegram?.email_ativo && <Check/>}
+        <div className="email-channel">
+          <button type="button" className={`channel channel-email ${emailAtivo ? 'selected' : ''}`} onClick={() => setEmailAberto((aberto) => !aberto)} aria-expanded={emailAberto}>
+            <Mail/><span><strong>E-mail</strong><small>{emailLoading ? 'Verificando configuração...' : emailAtivo ? `Configurado • ${emailDestino}` : 'Desativado no servidor'}</small></span>
+            {emailAtivo && <Check/>}
+          </button>
+          {emailAberto && <form className="email-destination" onSubmit={salvarEmailDestino}>
+            <label htmlFor="email-destinatario">E-mail para receber alertas</label>
+            <div className="email-destination-row">
+              <input id="email-destinatario" type="email" autoComplete="email" required maxLength={200} value={emailDestino} onChange={(e) => setEmailDestino(e.target.value)} placeholder="voce@exemplo.com"/>
+              <Button disabled={salvandoEmail}>{salvandoEmail ? 'Salvando...' : 'Salvar e-mail'}</Button>
+            </div>
+            {!emailAtivo && <small className="email-server-note">O endereço será salvo, mas o envio depende da configuração SMTP no servidor.</small>}
+            {emailError && <p className="form-error">{emailError}</p>}
+          </form>}
         </div>
         <div className="channel">
           <Send/>
@@ -592,7 +636,7 @@ function HistoryPage({ cidades, openAlerta }: { cidades: Cidade[]; openAlerta: (
             <td><strong>{fmtEnvio(a.enviado_em)}</strong></td>
             <td>{nomeCidade(a.cidade)}</td>
             <td><span className={`type type-${TIPO_LABEL[a.tipo].split(' ')[0].toLowerCase()}`}>{a.tipo === 'geada' ? <Snowflake/> : a.tipo === 'chuva_forte' ? <CloudRain/> : <Sun/>}{TIPO_LABEL[a.tipo]}</span></td>
-            <td><span className={`status ${a.status === 'enviado' ? 'sent' : 'failed'}`}>{a.status === 'enviado' ? 'Enviado' : 'Falhou'}</span></td>
+            <td><span className={`status ${a.status === 'enviado' ? 'sent' : 'failed'}`}>{a.status === 'enviado' ? a.erro ? 'Parcial' : 'Enviado' : 'Falhou'}</span></td>
             <td><span className="message-preview">{a.mensagem.split('\n')[0]}</span></td>
             <td>→</td>
           </tr>)}
@@ -643,8 +687,11 @@ function Detail({ alertaId, go }: { alertaId: number | null; go: (s: Screen) => 
   return <main className="content narrow">
     {voltar}
     <PageHead eyebrow="DETALHE DO ALERTA" title={TIPO_LABEL[a.tipo]} desc={`Enviado em ${enviado}`}/>
-    <div className={`detail-status ${a.status === 'falhou' ? 'failed' : ''}`}>
-      <span>{a.status === 'enviado' ? <><Check/> Enviado com sucesso</> : <><CircleAlert/> Falha no envio{a.erro ? `: ${a.erro}` : ''}</>}</span>
+    <div className={`detail-status ${a.status === 'falhou' ? 'failed' : a.erro ? 'partial' : ''}`}>
+      <div className="detail-delivery-summary">
+        <span>{a.status === 'enviado' ? <><Check/> Entregue por pelo menos um canal</> : <><CircleAlert/> Falha no envio</>}</span>
+        {a.erro && <small className="delivery-channel-error">Canal(is) sem entrega: {a.erro}</small>}
+      </div>
       <small>Para: {a.destinatario}</small>
     </div>
     <section className="message-card">

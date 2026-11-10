@@ -20,6 +20,7 @@ export interface Preferencia {
   limiar_chuva_mm: number
   limiar_geada_c: number
 }
+export interface EmailDestino { destinatario: string; ativo: boolean }
 export interface Cidade {
   id: number; nome: string; estado: string | null; latitude: number; longitude: number
   principal: boolean; preferencia: Preferencia
@@ -106,6 +107,8 @@ export const api = {
   removerCidade: (id: number) => req<void>('DELETE', `/cidades/${id}`),
 
   salvarPreferencias: (cidadeId: number, p: Partial<Preferencia>) => req<Preferencia>('PUT', `/preferencias/${cidadeId}`, p),
+  emailDestino: () => req<EmailDestino>('GET', '/preferencias/email'),
+  salvarEmailDestino: (email: string) => req<EmailDestino>('PUT', '/preferencias/email', { email }),
 
   previsao: (cidadeId: number) => req<PrevisaoResp>('GET', `/previsao/${cidadeId}`),
 
