@@ -744,7 +744,7 @@ function Messages({ cidade, go }: { cidade: Cidade | null; go: (s: Screen) => vo
       {erroCanais
         ? <p className="form-error">Não foi possível verificar os canais: {erroCanais}</p>
         : canais && <p className="api-note">
-            <CircleAlert/> Canais: e-mail {canais.email_ativo ? 'SMTP ativo' : 'desativado'}; Telegram {
+            <CircleAlert/> Canais: e-mail {canais.email_ativo ? 'ativo' : 'desativado'}; Telegram {
               !canais.bot_configurado ? 'bot não configurado' : canais.vinculado ? 'vinculado' : 'conta não vinculada'
             }.
           </p>}
