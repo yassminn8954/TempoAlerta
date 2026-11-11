@@ -20,7 +20,6 @@ export interface Preferencia {
   limiar_chuva_mm: number
   limiar_geada_c: number
 }
-export interface EmailDestino { destinatario: string; ativo: boolean }
 export interface Cidade {
   id: number; nome: string; estado: string | null; latitude: number; longitude: number
   principal: boolean; preferencia: Preferencia
@@ -116,14 +115,12 @@ export const api = {
   removerCidade: (id: number) => req<void>('DELETE', `/cidades/${id}`),
 
   salvarPreferencias: (cidadeId: number, p: Partial<Preferencia>) => req<Preferencia>('PUT', `/preferencias/${cidadeId}`, p),
-  emailDestino: () => req<EmailDestino>('GET', '/preferencias/email'),
-  salvarEmailDestino: (email: string) => req<EmailDestino>('PUT', '/preferencias/email', { email }),
 
   previsao: (cidadeId: number) => req<PrevisaoResp>('GET', `/previsao/${cidadeId}`),
 
   alertas: (f: { cidadeId?: number; tipo?: Tipo; periodo?: number; busca?: string; pagina?: number; limite?: number } = {}) =>
     req<{ itens: Alerta[]; total: number; pagina: number; limite: number }>('GET', `/alertas${qs(f)}`),
-  alerta: (id: number) => req<Alerta & { dados: Record<string, unknown> | null; destinatario: string }>('GET', `/alertas/${id}`),
+  alerta: (id: number) => req<Alerta & { dados: Record<string, unknown> | null }>('GET', `/alertas/${id}`),
   enviarTeste: (cidadeId: number, tipo: Tipo) => req<{
     id: number
     status: 'enviado' | 'falhou'
@@ -134,7 +131,6 @@ export const api = {
     vinculado: boolean
     bot_username: string
     bot_configurado: boolean
-    email_ativo: boolean
   }>('GET', '/telegram/status'),
   criarVinculoTelegram: () => req<{ url: string; expira_em: string }>('POST', '/telegram/vinculo'),
   desvincularTelegram: () => req<void>('DELETE', '/telegram/vinculo'),

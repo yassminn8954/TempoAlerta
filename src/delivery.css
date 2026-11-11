@@ -179,61 +179,6 @@
   clip-path: inset(50%);
 }
 
-.channel-email {
-  width: 100%;
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-}
-
-.email-channel {
-  display: grid;
-  min-width: 0;
-  align-content: start;
-  gap: 12px;
-}
-
-.email-destination {
-  display: grid;
-  gap: 9px;
-}
-
-.email-destination > label {
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.email-destination-row {
-  display: flex;
-  gap: 10px;
-}
-
-.email-destination-row input {
-  min-width: 0;
-  height: 44px;
-  flex: 1;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  outline: 0;
-  padding: 0 12px;
-  background: var(--surface);
-  color: var(--text);
-}
-
-.email-destination-row input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px #0ea5e917;
-}
-
-.email-server-note {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.email-destination .form-error {
-  margin: 0;
-}
-
 .detail-delivery-summary {
   display: grid;
   gap: 7px;
@@ -285,7 +230,4 @@
     height: 34px;
   }
 
-  .email-destination-row {
-    flex-direction: column;
-  }
 }

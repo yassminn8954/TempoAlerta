@@ -212,7 +212,7 @@ function Onboarding({ user, onDone }: { user: Usuario; onDone: (cidadeId: number
       {step === 3 && <>
         <span className="step-icon"><Sunrise/></span><h1>Que horas devemos avisar?</h1><p>Enviaremos a previsão diária no horário que funciona para você.</p>
         <label className="time-choice"><span>Horário de envio</span><input type="time" value={horario} onChange={(e) => setHorario(e.target.value)}/></label>
-        <div className="summary"><Sunrise/><span><strong>Previsão diária às {horario}</strong><small>para {cidade ? nomeCidade({ nome: cidade.nome, estado: cidade.uf ?? cidade.estado }) : ''} • canais configurados nas preferências</small></span></div>
+        <div className="summary"><Sunrise/><span><strong>Previsão diária às {horario}</strong><small>para {cidade ? nomeCidade({ nome: cidade.nome, estado: cidade.uf ?? cidade.estado }) : ''} • Telegram conectado nas preferências</small></span></div>
       </>}
       {erro && <p className="form-error">{erro}</p>}
       <div className="onboard-actions">
@@ -382,7 +382,7 @@ function Cities({ cidades, recarregar, setCidadeId }: { cidades: Cidade[]; recar
   </main>
 }
 
-function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuario; cidades: Cidade[]; cidadeId: number | null; recarregar: () => Promise<unknown>; go: (s: Screen) => void }) {
+function Preferences({ cidades, cidadeId, recarregar, go }: { cidades: Cidade[]; cidadeId: number | null; recarregar: () => Promise<unknown>; go: (s: Screen) => void }) {
   const [sel, setSel] = useState<number | null>(cidadeId)
   const cidade = cidades.find((c) => c.id === sel) ?? cidades[0] ?? null
   const [horarios, setHorarios] = useState<string[]>(['06:00', '16:00'])
@@ -393,18 +393,11 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
     vinculado: boolean
     bot_username: string
     bot_configurado: boolean
-    email_ativo: boolean
   } | null>(null)
   const [telegramUrl, setTelegramUrl] = useState('')
   const [telegramLoading, setTelegramLoading] = useState(true)
   const [telegramError, setTelegramError] = useState('')
   const [creatingTelegramLink, setCreatingTelegramLink] = useState(false)
-  const [emailDestino, setEmailDestino] = useState(user.email)
-  const [emailAtivo, setEmailAtivo] = useState(false)
-  const [emailLoading, setEmailLoading] = useState(true)
-  const [emailAberto, setEmailAberto] = useState(false)
-  const [salvandoEmail, setSalvandoEmail] = useState(false)
-  const [emailError, setEmailError] = useState('')
   const [toast, show] = useToast()
 
   useEffect(() => {
@@ -424,17 +417,6 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
       }
     }
     void carregarStatusTelegram()
-    void api.emailDestino().then((status) => {
-      if (vivo) {
-        setEmailDestino(status.destinatario)
-        setEmailAtivo(status.ativo)
-        setEmailError('')
-      }
-    }).catch((e) => {
-      if (vivo) setEmailError(msgErro(e))
-    }).finally(() => {
-      if (vivo) setEmailLoading(false)
-    })
     window.addEventListener('focus', carregarStatusTelegram)
     return () => {
       vivo = false
@@ -494,22 +476,6 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
     }
   }
 
-  async function salvarEmailDestino(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    setSalvandoEmail(true)
-    setEmailError('')
-    try {
-      const status = await api.salvarEmailDestino(emailDestino)
-      setEmailDestino(status.destinatario)
-      setEmailAtivo(status.ativo)
-      show('E-mail destinatário salvo com sucesso.')
-    } catch (e) {
-      setEmailError(msgErro(e))
-    } finally {
-      setSalvandoEmail(false)
-    }
-  }
-
   function adicionarHorario() {
     const candidatos = ['12:00', '20:00', '09:00', '15:00', '18:00', '08:00', '10:00', '14:00', '17:00', '21:00', '22:00']
     setHorarios((atuais) => {
@@ -555,23 +521,8 @@ function Preferences({ user, cidades, cidadeId, recarregar, go }: { user: Usuari
         })}</div>}
       <p className="delivery-note"><CircleAlert size={16}/> Cada mensagem é adaptada ao período do horário escolhido e enviada no minuto configurado.</p>
     </section>
-    <section className="settings-card"><div className="settings-title"><span><Mail/></span><div><h2>Canal de envio</h2><p>Selecione onde deseja receber seus alertas.</p></div></div>
+    <section className="settings-card"><div className="settings-title"><span><Send/></span><div><h2>Telegram</h2><p>Conecte sua conta ao Telegram para receber alertas.</p></div></div>
       <div className="channel-grid">
-        <div className="email-channel">
-          <button type="button" className={`channel channel-email ${emailAtivo ? 'selected' : ''}`} onClick={() => setEmailAberto((aberto) => !aberto)} aria-expanded={emailAberto}>
-            <Mail/><span><strong>E-mail</strong><small>{emailLoading ? 'Verificando configuração...' : emailAtivo ? `Configurado • ${emailDestino}` : 'Desativado no servidor'}</small></span>
-            {emailAtivo && <Check/>}
-          </button>
-          {emailAberto && <form className="email-destination" onSubmit={salvarEmailDestino}>
-            <label htmlFor="email-destinatario">E-mail para receber alertas</label>
-            <div className="email-destination-row">
-              <input id="email-destinatario" type="email" autoComplete="email" required maxLength={200} value={emailDestino} onChange={(e) => setEmailDestino(e.target.value)} placeholder="voce@exemplo.com"/>
-              <Button disabled={salvandoEmail}>{salvandoEmail ? 'Salvando...' : 'Salvar e-mail'}</Button>
-            </div>
-            {!emailAtivo && <small className="email-server-note">O endereço será salvo, mas o envio depende da configuração SMTP no servidor.</small>}
-            {emailError && <p className="form-error">{emailError}</p>}
-          </form>}
-        </div>
         <div className="channel">
           <Send/>
           <span>
@@ -647,7 +598,7 @@ function HistoryPage({ cidades, openAlerta }: { cidades: Cidade[]; openAlerta: (
   </main>
 }
 
-type Detalhe = Alerta & { dados: Record<string, any> | null; destinatario: string }
+type Detalhe = Alerta & { dados: Record<string, any> | null }
 
 function Detail({ alertaId, go }: { alertaId: number | null; go: (s: Screen) => void }) {
   const [a, setA] = useState<Detalhe | null>(null)
@@ -689,10 +640,9 @@ function Detail({ alertaId, go }: { alertaId: number | null; go: (s: Screen) => 
     <PageHead eyebrow="DETALHE DO ALERTA" title={TIPO_LABEL[a.tipo]} desc={`Enviado em ${enviado}`}/>
     <div className={`detail-status ${a.status === 'falhou' ? 'failed' : a.erro ? 'partial' : ''}`}>
       <div className="detail-delivery-summary">
-        <span>{a.status === 'enviado' ? <><Check/> Entregue por pelo menos um canal</> : <><CircleAlert/> Falha no envio</>}</span>
-        {a.erro && <small className="delivery-channel-error">Canal(is) sem entrega: {a.erro}</small>}
+        <span>{a.status === 'enviado' ? <><Check/> Entregue pelo Telegram</> : <><CircleAlert/> Falha no envio pelo Telegram</>}</span>
+        {a.erro && <small className="delivery-channel-error">Erro no Telegram: {a.erro}</small>}
       </div>
-      <small>Para: {a.destinatario}</small>
     </div>
     <section className="message-card">
       <div className="message-head"><Logo/><span>{a.tipo === 'previsao_diaria' ? 'PREVISÃO DIÁRIA' : 'ALERTA IMPORTANTE'}</span></div>
@@ -727,13 +677,13 @@ function Messages({ cidade, go }: { cidade: Cidade | null; go: (s: Screen) => vo
     setEnviando(true)
     try {
       const resultado = await api.enviarTeste(cidade.id, tipo)
-      if (resultado.status === 'enviado') show('Notificação entregue por pelo menos um canal ativo. Consulte o Histórico.')
-      else show(`Nenhum canal entregou a notificação. ${resultado.erro ?? 'Consulte o detalhe no Histórico.'}`, true)
+      if (resultado.status === 'enviado') show('Notificação entregue pelo Telegram. Consulte o Histórico.')
+      else show(`O Telegram não entregou a notificação. ${resultado.erro ?? 'Consulte o detalhe no Histórico.'}`, true)
     } catch (e) { show(msgErro(e), true) } finally { setEnviando(false) }
   }
 
   return <main className="content narrow">
-    <PageHead eyebrow="TESTE REAL" title="Testar notificação" desc="Busca a previsão atual e envia pelos canais configurados para sua conta."/>
+    <PageHead eyebrow="TESTE REAL" title="Testar notificação" desc="Busca a previsão atual e envia pelo Telegram vinculado à sua conta."/>
     {!cidade ? <SemCidade go={go}/> : <section className="settings-card">
       <label className="field"><span>Cidade</span><div className="input-wrap"><strong>{nomeCidade(cidade)}</strong></div></label>
       <label className="field"><span>Tipo de notificação</span><div className="input-wrap">
@@ -744,7 +694,7 @@ function Messages({ cidade, go }: { cidade: Cidade | null; go: (s: Screen) => vo
       {erroCanais
         ? <p className="form-error">Não foi possível verificar os canais: {erroCanais}</p>
         : canais && <p className="api-note">
-            <CircleAlert/> Canais: e-mail {canais.email_ativo ? 'ativo' : 'desativado'}; Telegram {
+            <CircleAlert/> Telegram: {
               !canais.bot_configurado ? 'bot não configurado' : canais.vinculado ? 'vinculado' : 'conta não vinculada'
             }.
           </p>}
@@ -799,7 +749,7 @@ export default function App() {
   const pages: Record<string, React.ReactNode> = {
     dashboard: <Dashboard user={user} cidade={cidade} go={go}/>,
     cities: <Cities cidades={cidades} recarregar={recarregar} setCidadeId={setCidadeId}/>,
-    preferences: <Preferences user={user} cidades={cidades} cidadeId={cidadeId} recarregar={recarregar} go={go}/>,
+    preferences: <Preferences cidades={cidades} cidadeId={cidadeId} recarregar={recarregar} go={go}/>,
     history: <HistoryPage cidades={cidades} openAlerta={abrirAlerta}/>,
     detail: <Detail alertaId={alertaId} go={go}/>,
     messages: <Messages cidade={cidade} go={go}/>,
